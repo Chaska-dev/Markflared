@@ -1,0 +1,9 @@
+﻿allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  sharp: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - framer-motion@13.4.4
+  - motion-dom@13.4.4
+  - motion@13.4.4

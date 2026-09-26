@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Env (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
+# Local app data
+data/
+uploads/
+
+# Logs
+*.log
+.run-logs/
+
+# Scratch / test junk
+_debug_scratch/
+elementos_testing/
+scripts/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

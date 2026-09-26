@@ -1,0 +1,52 @@
+{
+  "name": "markflare",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.11.1",
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"tsx watch server/index.ts\" \"vite\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "wrangler pages dev dist",
+    "deploy": "pnpm run build && wrangler pages deploy dist",
+    "db:migrate:all": "tsx server/migrate.ts",
+    "db:migrate:prod": "wrangler d1 migrations apply markflare-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply markflare-db --local"
+  },
+  "dependencies": {
+    "@types/katex": "^0.16.8",
+    "better-sqlite3": "^13.0.3",
+    "concurrently": "^10.0.5",
+    "express": "^5.2.1",
+    "hono": "^4.6.0",
+    "katex": "^0.18.9",
+    "motion": "^13.4.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240925.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "multer": "^2.4.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.3",
+    "wrangler": "^3.78.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "sharp",
+      "workerd"
+    ]
+  }
+}

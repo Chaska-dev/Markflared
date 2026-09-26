@@ -1,0 +1,409 @@
+// Parser markdown → bloques.
+// Compartido entre el backend Hono (Cloudflare) y el server Express (local),
+// así no duplicamos lógica en dos archivos. Mantenerlo puro (sin I/O) y
+// determinístico.
+
+export type ParsedBlock = {
+  type: string;
+  content: string;
+  checked: boolean;
+  language?: string;
+};
+
+export type ImportToken =
+  | { kind: 'code'; lines: string[]; language?: string }
+  | { kind: 'table'; lines: string[] }
+  | { kind: 'lines'; lines: string[] };
+
+function isTableHeader(line: string): boolean {
+  const trimmed = line.trim();
+  return /^\|.*\|$/.test(trimmed) && trimmed.indexOf('|', 1) !== -1;
+}
+
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  // | --- | --- |  o  |:---|:---:|---:|  o  --- | ---
+  return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(trimmed) && /-+/.test(trimmed);
+}
+
+function isTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return /^\|.*\|$/.test(trimmed);
+}
+
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(c => stripEmphasis(c.trim()));
+}
+
+function parseTable(lines: string[]): { columns: string[]; rows: string[][] } {
+  const columns = splitTableRow(lines[0]);
+  const rows = lines.slice(2).map(splitTableRow);
+  // Pad/truncate rows so they all have the same number of cells.
+  const normalized = rows.map(row => {
+    if (row.length < columns.length) {
+      return [...row, ...Array(columns.length - row.length).fill('')];
+    }
+    if (row.length > columns.length) {
+      return row.slice(0, columns.length);
+    }
+    return row;
+  });
+  return { columns, rows: normalized };
+}
+
+function preprocessImports(rawLines: string[]): ImportToken[] {
+  const tokens: ImportToken[] = [];
+  let i = 0;
+  let prevLine: string | null = null;
+  // Whether the current block (run of non-blank lines) started with a list
+  // item. Reset on each new run. This protects us from bullets that continue
+  // over multiple lines (some indented with 4+ spaces) where the previous
+  // line is the wrapped continuation, not the bullet itself.
+  let blockStartedWithListItem = false;
+  let lineBuf: string[] = [];
+
+  const flushLines = () => {
+    if (lineBuf.length > 0) {
+      tokens.push({ kind: 'lines', lines: lineBuf });
+      lineBuf = [];
+    }
+  };
+
+  while (i < rawLines.length) {
+    const line = rawLines[i];
+
+    // Blank line: emit the accumulated buffer and move on. We do NOT include
+    // the blank line in the buffer (it would be an empty paragraph).
+    if (line.trim() === '') {
+      flushLines();
+      prevLine = line;
+      i++;
+      continue;
+    }
+
+    // Start of a new non-blank run: detect if it began with a list item.
+    if (prevLine === null || prevLine.trim() === '') {
+      blockStartedWithListItem = /^[ \t]*[-*+]\s/.test(line);
+    }
+
+    // Fenced code block: ```lang ... ```
+    if (line.trim().startsWith('```')) {
+      const match = line.trim().match(/^```([a-zA-Z0-9_-]*)/);
+      const language = match ? match[1] : '';
+      const codeLines: string[] = [];
+      i++;
+      while (i < rawLines.length && !rawLines[i].trim().startsWith('```')) {
+        codeLines.push(rawLines[i]);
+        i++;
+      }
+      if (i < rawLines.length) i++; // skip closing ```
+      tokens.push({ kind: 'code', lines: codeLines, language });
+      prevLine = '```';
+      continue;
+    }
+
+    // HTML image: <p align="center"><img ...></p> or just <img ...>
+    if (line.trim().startsWith('<p') || line.trim().startsWith('<img')) {
+      let pHtml = line;
+      let j = i + 1;
+      if (line.trim().startsWith('<p') && !line.includes('</p>')) {
+        while (j < rawLines.length && !rawLines[j - 1].includes('</p>') && j - i < 8) {
+          pHtml += ' ' + rawLines[j].trim();
+          j++;
+        }
+      }
+      const imgMatch = pHtml.match(/<img\s+[^>]*src=["']([^"']+)["'][^>]*>/i);
+      if (imgMatch) {
+        const src = imgMatch[1];
+        const altMatch = pHtml.match(/alt=["']([^"']+)["']/i);
+        const alt = altMatch ? altMatch[1] : '';
+        tokens.push({ kind: 'lines', lines: [`![${alt}](${src})`] });
+        i = j;
+        prevLine = '</p>';
+        continue;
+      }
+    }
+
+    // Indented code block (standard markdown: 4+ spaces = code).
+    // BUT CommonMark says an indented code block can't interrupt a
+    // paragraph: it must be preceded by a blank line. If the previous line
+    // isn't blank (or this is the start of the document), indented lines
+    // are a wrapped list item / paragraph, NOT code. This prevents
+    // bullets with manual wraps from being broken into code blocks.
+    const prevIsBlank = prevLine === null || prevLine.trim() === '';
+    if (/^( {4,}|\t)/.test(line) && prevIsBlank) {
+      flushLines();
+      const codeLines: string[] = [];
+      while (i < rawLines.length && /^( {4,}|\t)/.test(rawLines[i])) {
+        codeLines.push(rawLines[i].replace(/^( {4}|\t)/, ''));
+        i++;
+      }
+      tokens.push({ kind: 'code', lines: codeLines });
+      prevLine = codeLines[codeLines.length - 1] ?? '';
+      continue;
+    }
+
+    // GFM table: header row + separator + data rows (consecutive, no blanks).
+    if (isTableHeader(line) && i + 1 < rawLines.length && isTableSeparator(rawLines[i + 1])) {
+      flushLines();
+      const tableLines: string[] = [];
+      while (i < rawLines.length && rawLines[i].trim() !== '' && isTableRow(rawLines[i])) {
+        tableLines.push(rawLines[i]);
+        i++;
+      }
+      tokens.push({ kind: 'table', lines: tableLines });
+      prevLine = tableLines[tableLines.length - 1] ?? '';
+      continue;
+    }
+
+    // ASCII art block: look ahead — if the next 2+ non-blank lines have 2+
+    // consecutive spaces somewhere, it's probably layout. Requires at least
+    // 2 lines so we don't convert normal paragraphs into code.
+    const isAsciiArtish = (s: string) => / {2,}/.test(s);
+    let j = i;
+    let artLines: string[] = [];
+    let artHits = 0;
+    while (j < rawLines.length && rawLines[j].trim() !== '') {
+      artLines.push(rawLines[j]);
+      if (isAsciiArtish(rawLines[j])) artHits++;
+      j++;
+    }
+    // If the current run started with a list item, it's a bullet with manual
+    // wrap — NOT ASCII art. (We check blockStartedWithListItem because
+    // looking only at the first line of the block fails when the wrap starts
+    // with the indented continuation, not the bullet.)
+    if (artLines.length >= 2 && artHits >= 1 && !blockStartedWithListItem) {
+      flushLines();
+      tokens.push({ kind: 'code', lines: artLines });
+      i = j;
+      prevLine = artLines[artLines.length - 1] ?? '';
+      continue;
+    }
+
+    // Normal line: add to buffer. On blank line (or end of document), emit
+    // the buffer as a single token.
+    lineBuf.push(line);
+    prevLine = line;
+    i++;
+  }
+  flushLines();
+  return tokens;
+}
+
+/**
+ * Strip markdown emphasis markers that the editor doesn't render inline.
+ * - **bold**, __bold__
+ * - *italic*, _italic_
+ * - `inline code` → we remove the backticks (to avoid visual noise) but
+ *   preserve the content INSIDE backticks so `_` and `*` inside identifiers
+ *   like `business:credit_note:role_check_missing` survive.
+ *
+ * We mask inline code with placeholders before applying the regexes and
+ * restore at the end, so names with underscores don't get torn apart.
+ */
+function stripEmphasis(s: string): string {
+  const codeStash: string[] = [];
+  const masked = s.replace(/`([^`]+)`/g, (_, code) => {
+    codeStash.push(code);
+    return `\u0000${codeStash.length - 1}\u0000`;
+  });
+  const stripped = masked
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/g, '$1')
+    .replace(/(?<!_)_(?!_)([^_]+?)(?<!_)_(?!_)/g, '$1')
+    .replace(/==([^=]+)==/g, '$1');
+  return stripped.replace(/\u0000(\d+)\u0000/g, (_, i) => codeStash[Number(i)]);
+}
+
+function parseLine(rawLine: string): ParsedBlock | null {
+  const trimmed = rawLine.trim();
+  if (trimmed === '') return null;
+
+  // Empty blockquote line (`>` alone or with spaces). It's a separator
+  // inside the quote — drop it so it doesn't show as a paragraph with a
+  // literal `>`. Common when markdown has a trailing `> ` to "close" a
+  // blockquote or add an empty paragraph inside.
+  if (trimmed === '>') return null;
+
+  // Empty or closing HTML container tags.
+  if (/^<\/?(p|div|center|span|br)[^>]*>$/i.test(trimmed)) return null;
+
+  let type = 'paragraph';
+  let content = trimmed;
+  let checked = false;
+
+  if (trimmed.startsWith('# ')) {
+    type = 'heading1';
+    content = stripEmphasis(trimmed.slice(2).trim());
+  } else if (trimmed.startsWith('## ')) {
+    type = 'heading2';
+    content = stripEmphasis(trimmed.slice(3).trim());
+  } else if (trimmed.startsWith('### ')) {
+    type = 'heading3';
+    content = stripEmphasis(trimmed.slice(4).trim());
+  } else if (/^(Slide|Step|Section|Capítulo|Parte|Chapter|Etapa)\s+\d+/i.test(trimmed)) {
+    // Headings without #: "Slide 1 — Portada", "Step 3: Build", etc.
+    type = 'heading1';
+    content = stripEmphasis(trimmed.replace(/^(Slide|Step|Section|Capítulo|Parte|Chapter|Etapa)\s+\d+\s*[-—:.|]\s*/i, ''));
+    if (!content) content = stripEmphasis(trimmed);
+  } else if (trimmed.startsWith('- [ ] ') || trimmed.startsWith('* [ ] ')) {
+    type = 'todo';
+    content = stripEmphasis(trimmed.slice(6).trim());
+    checked = false;
+  } else if (trimmed.startsWith('- [x] ') || trimmed.startsWith('- [X] ') || trimmed.startsWith('* [x] ')) {
+    type = 'todo';
+    content = stripEmphasis(trimmed.slice(6).trim());
+    checked = true;
+  } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+    type = 'bullet_list';
+    content = stripEmphasis(trimmed.slice(2).trim());
+  } else if (/^\d+\.\s/.test(trimmed)) {
+    type = 'numbered_list';
+    content = stripEmphasis(trimmed.replace(/^\d+\.\s+/, '').trim());
+  } else if (/^!\[(.*?)\]\((.*?)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+    return {
+      type: 'image',
+      content: match ? match[2].trim() : '',
+      checked: false,
+      language: match ? match[1].trim() : '',
+    };
+  } else if (/<img\s+[^>]*src=["']([^"']+)["']/i.test(trimmed)) {
+    const srcMatch = trimmed.match(/src=["']([^"']+)["']/i);
+    const altMatch = trimmed.match(/alt=["']([^"']+)["']/i);
+    return {
+      type: 'image',
+      content: srcMatch ? srcMatch[1].trim() : '',
+      checked: false,
+      language: altMatch ? altMatch[1].trim() : '',
+    };
+  } else if (/^\$\$(.*?)\$\$$/.test(trimmed)) {
+    const match = trimmed.match(/^\$\$(.*?)\$\$$/);
+    type = 'math';
+    content = match ? match[1].trim() : '';
+  } else if (trimmed.startsWith('> 💡') || trimmed.startsWith('> [!NOTE]') || trimmed.startsWith('> [!TIP]')) {
+    type = 'callout';
+    content = stripEmphasis(trimmed.replace(/^>\s*(💡|\[![A-Z]+\])?\s*/, '').trim());
+  } else if (trimmed.startsWith('> ')) {
+    type = 'quote';
+    content = stripEmphasis(trimmed.slice(2).trim());
+  } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+    type = 'divider';
+    content = '';
+  } else {
+    type = 'paragraph';
+    content = stripEmphasis(trimmed);
+  }
+
+  return { type, content, checked };
+}
+
+export function parseMarkdownToBlocks(markdown: string, fallbackTitle: string): { blocks: ParsedBlock[]; detectedTitle: string } {
+  const normalized = (markdown || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rawLines = normalized.split('\n');
+  const tokens = preprocessImports(rawLines);
+
+  const blocks: ParsedBlock[] = [];
+  let inFencedCode = false;
+  let fenced: string[] = [];
+  let fenceLang = '';
+  let detectedTitle = fallbackTitle;
+
+  for (const tok of tokens) {
+    if (inFencedCode) {
+      if (tok.kind === 'lines' && tok.lines[0].trim().startsWith('```')) {
+        inFencedCode = false;
+        blocks.push({ type: 'code', content: fenced.join('\n'), checked: false, language: fenceLang });
+        fenced = [];
+        fenceLang = '';
+        continue;
+      }
+      // Inside a fence: accumulate raw lines (no stripping).
+      if (tok.kind === 'lines') {
+        fenced.push(...tok.lines);
+      } else {
+        fenced.push(...tok.lines);
+      }
+      continue;
+    }
+
+    if (tok.kind === 'code') {
+      blocks.push({ type: 'code', content: tok.lines.join('\n'), checked: false, language: tok.language || '' });
+      continue;
+    }
+
+    if (tok.kind === 'table') {
+      const table = parseTable(tok.lines);
+      blocks.push({
+        type: 'table',
+        content: JSON.stringify(table),
+        checked: false,
+      });
+      continue;
+    }
+
+    // tok.kind === 'lines'
+    // Each `lines` token represents a run of consecutive non-blank lines
+    // (guaranteed by preprocessImports). Here we evaluate each line
+    // individually to detect headings/lists/quotes/etc., but when ALL
+    // lines of the token are simple paragraphs, we merge them into a
+    // single block (CommonMark: a paragraph = 1+ consecutive lines).
+    // This avoids the "manual wrap → 2 blocks" bug that broke long paragraphs.
+    const blockParseds: ParsedBlock[] = [];
+    for (const line of tok.lines) {
+      if (line.trim().startsWith('```')) {
+        if (inFencedCode) {
+          // close
+          inFencedCode = false;
+          blocks.push({ type: 'code', content: fenced.join('\n'), checked: false });
+          fenced = [];
+        } else {
+          // open
+          inFencedCode = true;
+          fenced = [];
+        }
+        continue;
+      }
+      if (inFencedCode) {
+        fenced.push(line);
+        continue;
+      }
+
+      const parsed = parseLine(line);
+      if (!parsed) continue;
+      if (parsed.type === 'heading1' && (detectedTitle === fallbackTitle || !detectedTitle)) {
+        detectedTitle = parsed.content;
+      }
+      blockParseds.push(parsed);
+    }
+    if (blockParseds.length === 0) continue;
+
+    // If ALL token lines are simple paragraphs, merge into a single block
+    // preserving the wrap with '\n'. If a heading/list/quote appears in
+    // between, emit each block individually (paragraphs can't merge with
+    // other types).
+    const allParagraphs = blockParseds.every(p => p.type === 'paragraph');
+    if (allParagraphs) {
+      const merged = blockParseds.map(p => p.content).join('\n');
+      blocks.push({ type: 'paragraph', content: merged, checked: false });
+    } else {
+      for (const p of blockParseds) blocks.push(p);
+    }
+  }
+
+  if (inFencedCode && fenced.length > 0) {
+    blocks.push({ type: 'code', content: fenced.join('\n'), checked: false });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({ type: 'paragraph', content: '', checked: false });
+  }
+
+  return { blocks, detectedTitle };
+}
