@@ -172,6 +172,7 @@ export const en = {
   // Block context menu (transform + actions)
   'ctx.transformTo': 'Convert to:',
   'ctx.delete': 'Delete',
+  'ctx.deleteSubpageHint': 'Subpages can only be removed from the sidebar.',
   'ctx.paragraph': 'Paragraph',
   'ctx.heading1': 'Heading 1',
   'ctx.heading2': 'Heading 2',
@@ -277,6 +278,32 @@ export const en = {
   'linkModal.remove': 'Remove',
   'linkModal.removeTooltip': 'Remove link and keep text',
   'linkModal.save': 'Save',
+
+  // Import Markdown Modal
+  'importModal.title': 'Import Markdown',
+  'importModal.subtitle': 'Drop a .md file or browse to pick one from your computer.',
+  'importModal.close': 'Close',
+  'importModal.dropHere': 'Drop your .md file here',
+  'importModal.dropNow': 'Release to import',
+  'importModal.or': 'or',
+  'importModal.browse': 'browse files',
+  'importModal.acceptsExt': 'Accepts .md files (Markdown / plain text)',
+  'importModal.cancel': 'Cancel',
+  'importModal.import': 'Import',
+  'importModal.importing': 'Importing…',
+  'importModal.errorGeneric': 'Could not import the file',
+  'importModal.errorReadFile': 'Could not read the file contents',
+  'importModal.errorNotMarkdown': 'Only Markdown or text files can be imported',
+  'importModal.errorLoadPages': 'Could not load the page list',
+  'importModal.whereQuestion': 'Where should this page live?',
+  'importModal.parentRoot': 'Workspace root',
+  'importModal.parentRootDesc': 'Top level — visible in the sidebar as a standalone page.',
+  'importModal.parentNested': 'Or nest it inside an existing page:',
+  'importModal.parentSearchPlaceholder': 'Filter pages…',
+  'importModal.loadingPages': 'Loading pages…',
+  'importModal.noMatches': 'No pages match "{query}".',
+  'importModal.noPages': 'No pages yet — the file will land at the workspace root.',
+  'importModal.changeFile': 'Pick a different file',
 };
 
 export type TranslationKey = keyof typeof en;
