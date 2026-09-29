@@ -396,9 +396,20 @@ app.delete('/api/pages/:id', (req, res) => {
   const pageIds = collectDescendantPageIds(id);
   // Delete blocks of all descendant pages, then the pages themselves, in a
   // single transaction so we never leave orphans.
+  //
+  // Also clean up subpage blocks that live in OTHER pages but reference one
+  // of the deleted pages (subpage blocks store the referenced page id in
+  // `content`). Without this, deleting a page leaves dangling subpage
+  // blocks in the parent documents that point to a no-longer-existing
+  // page. Subpages are intentionally not deletable inline, so removing
+  // the page is the only way for those references to disappear.
   const deleteBlocks = db.prepare('DELETE FROM blocks WHERE page_id = ?');
+  const deleteOrphanSubpageRefs = db.prepare(
+    `DELETE FROM blocks WHERE type = 'subpage' AND content IN (${pageIds.map(() => '?').join(',') || "''"})`
+  );
   const deletePage = db.prepare('DELETE FROM pages WHERE id = ?');
   const tx = db.transaction((ids: string[]) => {
+    deleteOrphanSubpageRefs.run(...ids);
     for (const pid of ids) deleteBlocks.run(pid);
     for (const pid of ids) deletePage.run(pid);
   });

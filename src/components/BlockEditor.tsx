@@ -666,7 +666,15 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
 
     if (e.key === 'Backspace') {
       const block = blocks[idx];
-      const nonEditable = ['subpage', 'divider', 'image', 'file'].includes(block.type);
+      // subpage blocks are intentionally non-deletable inline: the reference
+      // only goes away when the referenced page is deleted from the sidebar.
+      // divider/image/file still get the default non-editable treatment.
+      const nonEditable = ['divider', 'image', 'file'].includes(block.type);
+      const isSubpage = block.type === 'subpage';
+      if (isSubpage) {
+        e.preventDefault();
+        return;
+      }
       if (nonEditable || block.content === '') {
         e.preventDefault();
         deleteBlock(id, 'backspace');

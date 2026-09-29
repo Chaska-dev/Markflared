@@ -172,6 +172,7 @@ export const en = {
   // Block context menu (transform + actions)
   'ctx.transformTo': 'Convert to:',
   'ctx.delete': 'Delete',
+  'ctx.deleteSubpageHint': 'Subpages can only be removed from the sidebar.',
   'ctx.paragraph': 'Paragraph',
   'ctx.heading1': 'Heading 1',
   'ctx.heading2': 'Heading 2',

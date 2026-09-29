@@ -477,7 +477,10 @@ export function Block({
       label: t('ctx.delete'),
       icon: <TrashIcon size={14} />,
       danger: true,
-      disabled: !onDelete || isOnly,
+      // subpage blocks can't be deleted inline — the reference only goes
+      // away when the referenced page itself is deleted from the sidebar.
+      disabled: !onDelete || isOnly || block.type === 'subpage',
+      title: block.type === 'subpage' ? t('ctx.deleteSubpageHint') : undefined,
       onClick: onDelete ? () => onDelete(block.id) : () => {},
     },
   ];

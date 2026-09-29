@@ -6,6 +6,9 @@ export interface ContextMenuItem {
   onClick?: () => void;
   danger?: boolean;
   disabled?: boolean;
+  // Tooltip shown on hover. Most useful for disabled items so the user
+  // understands why the action isn't available.
+  title?: string;
   // Renders as a divider line between groups.
   divider?: boolean;
   // Renders as a non-clickable section header (e.g. "Convert to:").
@@ -81,6 +84,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
             className={`context-menu-item${item.danger ? ' context-menu-item--danger' : ''}`}
             role="menuitem"
             disabled={item.disabled}
+            title={item.title}
             onClick={() => {
               if (item.disabled) return;
               item.onClick?.();

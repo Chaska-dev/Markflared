@@ -173,6 +173,7 @@ export const es: Record<TranslationKey, string> = {
   // Block context menu
   'ctx.transformTo': 'Convertir a:',
   'ctx.delete': 'Eliminar',
+  'ctx.deleteSubpageHint': 'Las subpáginas solo se eliminan desde el sidebar.',
   'ctx.paragraph': 'Párrafo',
   'ctx.heading1': 'Título 1',
   'ctx.heading2': 'Título 2',
