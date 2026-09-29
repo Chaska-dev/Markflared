@@ -26,6 +26,7 @@ import { WorkspaceSettings } from './WorkspaceSettings';
 import { UserMenuPopover } from './UserMenuPopover';
 import { IconColorPickerModal } from './IconColorPickerModal';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ImportModal } from './ImportModal';
 import {
   getRecentPages,
   getProjectIds,
@@ -500,7 +501,7 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
     toggleDesktopCollapsed,
   } = useSidebar();
   const { t } = useLanguage();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const workspaceHeaderRef = useRef<HTMLDivElement | null>(null);
   const userAnchorRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -591,29 +592,6 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const content = ev.target?.result as string;
-      const title = file.name.replace(/\.md$/i, '');
-      try {
-        const res = await api.pages.import({ markdown: content, title });
-        await refreshPages();
-        navigate(`/page/${res.page.id}`);
-      } catch (err: any) {
-        console.error('Import error:', err);
-        alert(`Error importing markdown file: ${err.message || 'Unknown error'}`);
-      }
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, [navigate, refreshPages]);
-
   // Create new project.
   const handleCreateProject = useCallback(async () => {
     try {
@@ -674,16 +652,9 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
           <div className="sidebar-actions">
             {!collapsed && (
               <>
-                <input
-                  type="file"
-                  accept=".md"
-                  style={{ display: 'none' }}
-                  ref={fileInputRef}
-                  onChange={handleImport}
-                />
                 <button
                   className="sidebar-btn"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => setImportModalOpen(true)}
                   title={t('sidebar.import')}
                   aria-label={t('sidebar.import')}
                 >
@@ -963,6 +934,15 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
       <IconColorPickerModal
         open={colorPickerOpen}
         onClose={() => setColorPickerOpen(false)}
+      />
+
+      <ImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImported={async () => {
+          // Refresh so the new page shows up in the tree immediately.
+          await refreshPages();
+        }}
       />
       </>
     </DragStateContext.Provider>
