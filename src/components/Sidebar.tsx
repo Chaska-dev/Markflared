@@ -41,6 +41,87 @@ function hasDescendant(page: Page, targetId?: string): boolean {
   return page.children.some(c => c.id === targetId || hasDescendant(c, targetId));
 }
 
+// Returns true if `targetId` is the same page as `root` or one of its
+// descendants. Used to reject drops that would create a cycle in the
+// page tree (e.g. moving "Work" into "Tasks" when "Tasks" is already
+// nested under "Work").
+function containsPageId(root: Page, targetId?: string | null): boolean {
+  if (!targetId) return false;
+  if (root.id === targetId) return true;
+  return hasDescendant(root, targetId);
+}
+
+// Walk the flat pages array and return true if `descendantId` is a
+// descendant of `ancestorId` in the parent_id chain. Used to detect
+// cycle conditions during drag without rebuilding the full tree.
+function isDescendantOf(
+  flatPages: Page[],
+  descendantId: string,
+  ancestorId: string
+): boolean {
+  let current = flatPages.find(p => p.id === descendantId);
+  // Hard cap the loop at 1000 hops so a corrupted parent_id chain can't
+  // lock up the UI on every dragover tick.
+  for (let i = 0; i < 1000 && current?.parent_id; i++) {
+    if (current.parent_id === ancestorId) return true;
+    current = flatPages.find(p => p.id === current!.parent_id);
+  }
+  return false;
+}
+
+// Build the subtree rooted at the given page id from a flat pages list.
+// Returns null if the page doesn't exist. Used by drag-and-drop to detect
+// cycles: "would nesting page A under page B create a cycle?" is true iff
+// B is in A's subtree.
+function buildDragSubtree(flatPages: Page[], rootId: string): Page | null {
+  const pageMap = new Map<string, Page>();
+  flatPages.forEach(p => pageMap.set(p.id, { ...p, children: [] }));
+  flatPages.forEach(p => {
+    const node = pageMap.get(p.id)!;
+    if (p.parent_id && pageMap.has(p.parent_id)) {
+      const parent = pageMap.get(p.parent_id)!;
+      parent.children = parent.children || [];
+      parent.children.push(node);
+    }
+  });
+  return pageMap.get(rootId) ?? null;
+}
+
+// Drag state shared across all PageTreeItems via context. Keeps the UI
+// reactive without re-rendering every item on every dragover (only the
+// currently-hovered item reads it).
+type DropZone = 'top' | 'center' | 'bottom';
+type DragState = {
+  draggingId: string | null;
+  overId: string | null;
+  zone: DropZone | null;
+};
+const DragStateContext = React.createContext<{
+  state: DragState;
+  setState: React.Dispatch<React.SetStateAction<DragState>>;
+} | null>(null);
+
+function useDragState() {
+  const ctx = React.useContext(DragStateContext);
+  if (!ctx) throw new Error('useDragState must be used within DragStateContext.Provider');
+  return ctx;
+}
+
+// Compute the drop zone based on cursor Y position relative to the target
+// element's bounding rect.
+//   - top 33%  -> nest (center) by default; if page has children or is
+//     collapsed, treat top 25% as "before sibling" instead.
+//   - bottom 25% -> "after sibling"
+// To keep the UX simple we use three equal thirds: top = before sibling,
+// center = nest inside, bottom = after sibling. This matches the most
+// common drag-to-reorder patterns (Notion, Finder, VSCode explorer).
+function computeZone(clientY: number, rect: DOMRect): DropZone {
+  const ratio = (clientY - rect.top) / rect.height;
+  if (ratio < 0.33) return 'top';
+  if (ratio > 0.67) return 'bottom';
+  return 'center';
+}
+
 // Build the cascade-count description for the delete confirm. Uses native JSX
 // (not dangerouslySetInnerHTML) so a malicious page title can't inject HTML.
 // Singular/plural handled with {one}|{other} keys to avoid a CLDR dependency.
@@ -97,8 +178,9 @@ const PageTreeItem = memo(function PageTreeItem({ page, level = 0, collapsed }: 
   const expanded = manuallyExpanded !== null ? manuallyExpanded : isParentOfActive;
 
   const navigate = useNavigate();
-  const { deletePage, createPage, refreshPages } = usePageContext();
+  const { deletePage, createPage, refreshPages, updatePage, pages: flatPages } = usePageContext();
   const { t } = useLanguage();
+  const { state: dragState, setState: setDragState } = useDragState();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cascade, setCascade] = useState<{ pages: number; blocks: number } | null>(null);
@@ -107,6 +189,20 @@ const PageTreeItem = memo(function PageTreeItem({ page, level = 0, collapsed }: 
 
   const isActive = currentId === page.id;
   const hasChildren = !!(page.children && page.children.length > 0);
+  const isDragging = dragState.draggingId === page.id;
+  const isOver = dragState.overId === page.id && dragState.zone !== null;
+  // A drop on this target would create a cycle iff the target is itself
+  // or already a descendant of the dragging page (because nesting parent
+  // under its own descendant makes the tree circular).
+  const wouldCycle = !!dragState.draggingId && (
+    page.id === dragState.draggingId ||
+    isDescendantOf(flatPages, page.id, dragState.draggingId)
+  );
+
+  // True when this item is being hovered AND the drop would be valid
+  // (not a cycle). Used to apply the drop-zone CSS classes.
+  const dropZone = isOver && !wouldCycle ? dragState.zone : null;
+  const dropInvalid = isOver && wouldCycle;
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -165,10 +261,150 @@ const PageTreeItem = memo(function PageTreeItem({ page, level = 0, collapsed }: 
     }
   }, [createPage, navigate, page.id, refreshPages]);
 
+  // Drag handlers -----------------------------------------------------------
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    // Don't initiate a drag from buttons inside the row (add/delete) — the
+    // user clicked an action, not the row itself.
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = 'move';
+    // Set the payload as both 'text/plain' (broadly supported) and a
+    // custom mime type so the drop handler can read it reliably even if
+    // a browser extension or other code touches text/plain.
+    e.dataTransfer.setData('text/plain', page.id);
+    e.dataTransfer.setData('application/x-page-id', page.id);
+    // Use the browser's default drag image. Custom drag images (clones
+    // appended to body and removed via setTimeout) cause some browsers
+    // to fire dragend prematurely, which can swallow the drop event.
+    setDragState({ draggingId: page.id, overId: null, zone: null });
+  }, [page.id, setDragState]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!dragState.draggingId || dragState.draggingId === page.id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const zone = computeZone(e.clientY, rect);
+    // Only setState when something actually changed to avoid render churn
+    // during a long drag across many items.
+    setDragState(prev => {
+      if (prev.overId === page.id && prev.zone === zone) return prev;
+      return { ...prev, overId: page.id, zone };
+    });
+  }, [dragState.draggingId, page.id, setDragState]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear when the cursor leaves this item (not when entering a
+    // child). relatedTarget is the element being entered; if it's still
+    // inside this item, do nothing.
+    const related = e.relatedTarget as Node | null;
+    if (related && (e.currentTarget as Node).contains(related)) return;
+    setDragState(prev => {
+      if (prev.overId !== page.id) return prev;
+      return { ...prev, overId: null, zone: null };
+    });
+  }, [page.id, setDragState]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Trust the dataTransfer payload first (it's set on dragstart and
+    // survives dragover re-renders). Try the custom mime first, then
+    // fall back to text/plain, then to state.
+    const draggingId =
+      e.dataTransfer.getData('application/x-page-id') ||
+      e.dataTransfer.getData('text/plain') ||
+      dragState.draggingId;
+    if (!draggingId || draggingId === page.id) {
+      setDragState({ draggingId: null, overId: null, zone: null });
+      return;
+    }
+    const zone = dragState.zone ?? computeZone(e.clientY, (e.currentTarget as HTMLElement).getBoundingClientRect());
+
+    // Cycle guard: reject if the target is inside the dragging page's
+    // subtree (nesting parent under its own descendant creates a cycle).
+    // We need the dragging page's full tree, not the flat row, because
+    // children aren't denormalized into the flat pages list.
+    const draggingPage = flatPages.find(p => p.id === draggingId);
+    if (!draggingPage) {
+      setDragState({ draggingId: null, overId: null, zone: null });
+      return;
+    }
+    const draggingSubtree = buildDragSubtree(flatPages, draggingId);
+    if (draggingSubtree && containsPageId(draggingSubtree, page.id)) {
+      setDragState({ draggingId: null, overId: null, zone: null });
+      return;
+    }
+
+    // Compute new parent_id and position from the drop zone.
+    let newParentId: string | null;
+    let newPosition: number;
+
+    if (zone === 'center') {
+      // Nest: parent becomes the target page; position is at end of its
+      // children. If the target has no children, use target's position
+      // + 1000 so there's room to insert before if needed later.
+      const lastChild = (page.children ?? [])
+        .reduce<Page | null>((max, c) => !max || c.position > max.position ? c : max, null);
+      newParentId = page.id;
+      newPosition = lastChild ? lastChild.position + 1000 : page.position + 1000;
+    } else {
+      // Sibling reorder: new parent matches the target's parent.
+      newParentId = page.parent_id ?? null;
+      const siblings = flatPages
+        .filter(p => (p.parent_id ?? null) === newParentId)
+        .sort((a, b) => a.position - b.position);
+      const myIndex = siblings.findIndex(s => s.id === page.id);
+      const insertBefore = zone === 'top';
+      const ref = insertBefore
+        ? (myIndex > 0 ? siblings[myIndex - 1] : null)   // before page: ref = previous sibling
+        : siblings[myIndex + 1];                         // after page: ref = next sibling
+
+      const refPos = ref ? ref.position : null;
+      const pagePos = page.position;
+      if (refPos === null) {
+        // No reference sibling — push past the page or use page pos / 2.
+        newPosition = insertBefore
+          ? Math.max(0, pagePos - 1000)
+          : pagePos + 1000;
+      } else {
+        newPosition = insertBefore
+          ? (refPos + pagePos) / 2
+          : (pagePos + refPos) / 2;
+      }
+    }
+
+    // Optimistic local update so the tree moves immediately. The PUT
+    // response is treated as the source of truth and `updatePage` already
+    // replaces the row in `pages`, so the tree re-renders correctly.
+    try {
+      await updatePage(draggingId, { parent_id: newParentId, position: newPosition });
+      // If we nested into the target, expand it so the user sees the
+      // result of the drop.
+      if (zone === 'center') setManuallyExpanded(true);
+    } catch (err) {
+      console.error('Failed to move page', err);
+    } finally {
+      setDragState({ draggingId: null, overId: null, zone: null });
+    }
+  }, [dragState, flatPages, page, setDragState, updatePage]);
+
+  // End: parent component listens globally for this.
+  const handleDragEnd = useCallback(() => {
+    setDragState({ draggingId: null, overId: null, zone: null });
+  }, [setDragState]);
+
   if (collapsed) {
     return (
       <div
-        className={`page-item page-item--collapsed ${isActive ? 'active' : ''}`}
+        className={`page-item page-item--collapsed ${isActive ? 'active' : ''} ${isDragging ? 'page-item--dragging' : ''}`}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         onClick={handleClick}
         title={page.title || t('sidebar.untitledPage')}
         role="button"
@@ -181,10 +417,24 @@ const PageTreeItem = memo(function PageTreeItem({ page, level = 0, collapsed }: 
     );
   }
 
+  const itemClass = [
+    'page-item',
+    isActive ? 'active' : '',
+    isDragging ? 'page-item--dragging' : '',
+    dropZone ? `page-item--drop-${dropZone}` : '',
+    dropInvalid ? 'page-item--drop-invalid' : '',
+  ].filter(Boolean).join(' ');
+
   return (
     <div>
       <div
-        className={`page-item ${isActive ? 'active' : ''}`}
+        className={itemClass}
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
         onClick={handleClick}
       >
         <div
@@ -261,6 +511,49 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
   const location = useLocation();
   const { id: currentId } = useParams();
   const { theme, toggleTheme } = useTheme();
+
+  // Drag state shared with PageTreeItem via DragStateContext.
+  const [dragState, setDragState] = useState<DragState>({ draggingId: null, overId: null, zone: null });
+
+  // Global dragend safety net: if the user drops outside any item (e.g.
+  // cancels with Escape, drops on a non-droppable area), make sure the
+  // ghost and over-state don't linger.
+  useEffect(() => {
+    if (!dragState.draggingId) return;
+    const reset = () => setDragState({ draggingId: null, overId: null, zone: null });
+    window.addEventListener('dragend', reset);
+    return () => window.removeEventListener('dragend', reset);
+  }, [dragState.draggingId]);
+
+  // Drop at root level: when the user drops on an empty tree area or on
+  // the section itself (not on a specific page), move the dragged page
+  // to the root of that section, appending at the end.
+  const handleRootDrop = useCallback(async (sectionTree: Page[]) => {
+    const draggingId = dragState.draggingId;
+    if (!draggingId) return;
+    const draggingPage = pages.find(p => p.id === draggingId);
+    if (!draggingPage) return;
+    // Cycle guard: dragging a root-level page onto its own root is fine,
+    // but dragging onto a descendant while moving to the root can't
+    // happen (descendants are nested, not at root). No cycle risk here.
+    const last = sectionTree.reduce<Page | null>((max, p) => !max || p.position > max.position ? p : max, null);
+    const newPosition = last ? last.position + 1000 : 1000;
+    try {
+      await updatePage(draggingId, { parent_id: null, position: newPosition });
+    } catch (err) {
+      console.error('Failed to move page to root', err);
+    } finally {
+      setDragState({ draggingId: null, overId: null, zone: null });
+    }
+  }, [dragState.draggingId, pages, updatePage]);
+
+  const handleRootDragOver = useCallback((e: React.DragEvent) => {
+    if (!dragState.draggingId) return;
+    // Only react if not over a specific item. Items stop propagation on
+    // their own dragover so this is a fallback.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }, [dragState.draggingId]);
 
   // Local state for recents and projects (100% frontend).
   const [recentPages, setRecentPages] = useState<RecentPageItem[]>(() => getRecentPages());
@@ -357,7 +650,8 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
   ].filter(Boolean).join(' ');
 
   return (
-    <>
+    <DragStateContext.Provider value={{ state: dragState, setState: setDragState }}>
+      <>
       {isOverlayOpen && (
         <div className="sidebar-overlay" onClick={isMobile ? closeMobile : toggleDesktopCollapsed} aria-hidden="true" />
       )}
@@ -513,7 +807,11 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
                   <span>{t('sidebar.addProject')}</span>
                 </div>
               ) : (
-                <div className="sidebar-tree-group">
+                <div
+                  className="sidebar-tree-group"
+                  onDragOver={handleRootDragOver}
+                  onDrop={() => handleRootDrop(projectTree)}
+                >
                   {projectTree.map((page) => (
                     <PageTreeItem key={page.id} page={page} collapsed={collapsed} />
                   ))}
@@ -543,7 +841,11 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
                   <span>{t('sidebar.addPrivate')}</span>
                 </div>
               ) : (
-                <div className="sidebar-tree-group">
+                <div
+                  className="sidebar-tree-group"
+                  onDragOver={handleRootDragOver}
+                  onDrop={() => handleRootDrop(privateTree)}
+                >
                   {privateTree.map((page) => (
                     <PageTreeItem key={page.id} page={page} collapsed={collapsed} />
                   ))}
@@ -662,6 +964,7 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
         open={colorPickerOpen}
         onClose={() => setColorPickerOpen(false)}
       />
-    </>
+      </>
+    </DragStateContext.Provider>
   );
 }

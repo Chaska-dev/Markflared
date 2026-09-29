@@ -161,6 +161,48 @@ body {
   font-size: 14px;
   gap: 4px;
   transition: background 0.1s;
+  position: relative;
+  user-select: none;
+}
+
+/* Drag & drop visual states ------------------------------------------- */
+
+/* The page being dragged: dim it so the user can see what's being moved
+   vs. what is just sitting in the tree. */
+.page-item--dragging {
+  opacity: 0.4;
+}
+
+/* Drop-zone indicators. The position:relative above lets us draw the
+   thin colored bar at top/bottom edges without breaking layout. */
+.page-item--drop-top::before,
+.page-item--drop-bottom::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: var(--accent, #2eaadc);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.page-item--drop-top::before { top: -1px; }
+.page-item--drop-bottom::after { bottom: -1px; }
+
+/* Center zone = nest inside this page. Highlight the row so the user
+   sees they're about to drop *into* this folder. */
+.page-item--drop-center {
+  background: var(--bg-active, rgba(46, 170, 220, 0.12));
+  color: var(--text-primary);
+  outline: 1px dashed var(--accent, #2eaadc);
+  outline-offset: -1px;
+}
+
+/* Reject when the drop would create a cycle (dragging onto self or a
+   descendant). Show a warning tint and disable the drop effect. */
+.page-item--drop-invalid {
+  cursor: not-allowed;
+  background: rgba(220, 80, 80, 0.08);
 }
 
 .page-item:hover {
