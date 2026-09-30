@@ -7,6 +7,7 @@ import {
   PaletteIcon,
   LogOutIcon,
   UserIcon,
+  KeyIcon,
 } from './Icons';
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
   onClose: () => void;
   onOpenWorkspaceSettings: () => void;
   onOpenColorPicker: () => void;
+  onOpenApiToken: () => void;
 }
 
 export function UserMenuPopover({
@@ -21,6 +23,7 @@ export function UserMenuPopover({
   onClose,
   onOpenWorkspaceSettings,
   onOpenColorPicker,
+  onOpenApiToken,
 }: Props) {
   const { username, logout } = useAuth();
   const { theme, iconColorMode, customIconColor } = useTheme();
@@ -116,6 +119,21 @@ export function UserMenuPopover({
                   : `${t('colorPicker.modeAuto')} (${theme === 'dark' ? '#FFFFFF' : '#111111'})`
               }
             />
+          </button>
+
+          <button
+            type="button"
+            className="user-menu-item"
+            role="menuitem"
+            onClick={() => {
+              onClose();
+              onOpenApiToken();
+            }}
+          >
+            <div className="user-menu-item-icon">
+              <KeyIcon size={16} />
+            </div>
+            <span className="user-menu-item-label">{t('userMenu.apiToken')}</span>
           </button>
         </div>
 

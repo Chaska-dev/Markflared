@@ -77,6 +77,12 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = header.slice('Bearer '.length).trim();
   verifyToken(token, authEnv.username, authEnv.secret).then(v => {
     if (!v.ok) return res.status(401).json({ error: v.expired ? 'Session expired' : 'Unauthorized' });
+    if (v.isApi && v.tokenId) {
+      const row = db.prepare('SELECT id FROM api_tokens WHERE id = ?').get(v.tokenId);
+      if (!row) {
+        return res.status(401).json({ error: 'Token has been revoked' });
+      }
+    }
     next();
   }).catch(() => res.status(401).json({ error: 'Unauthorized' }));
 }
@@ -104,6 +110,40 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
   const { token, expiresAt } = await issueToken(authEnv.username, authEnv.secret);
   return res.json({ token, username: authEnv.username, expiresAt });
+});
+
+// API Token management endpoints (auth-gated)
+
+// POST /api/auth/token — generates a dedicated long-lived token for MCP / external tools
+app.post('/api/auth/token', requireAuth, async (req: Request, res: Response) => {
+  const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim().slice(0, 100) : 'MCP Token';
+  const expiresInDays = Number(req.body?.expiresInDays) || 365;
+  const ttlMs = expiresInDays * 24 * 60 * 60 * 1000;
+  const id = crypto.randomUUID();
+  const { token, expiresAt } = await issueToken(authEnv.username, authEnv.secret, ttlMs, id);
+  db.prepare('INSERT INTO api_tokens (id, name, token, expires_at) VALUES (?, ?, ?, ?)').run(id, name, token, expiresAt);
+  const row: any = db.prepare('SELECT id, name, token, created_at, expires_at FROM api_tokens WHERE id = ?').get(id);
+  return res.json({ id: row.id, name: row.name, token: row.token, expiresAt: row.expires_at, createdAt: row.created_at });
+});
+
+// GET /api/auth/tokens — lists all active API tokens
+app.get('/api/auth/tokens', requireAuth, (req: Request, res: Response) => {
+  const rows: any[] = db.prepare('SELECT id, name, token, created_at, expires_at FROM api_tokens ORDER BY created_at DESC').all();
+  const tokens = rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    tokenPreview: r.token.length > 24 ? `${r.token.slice(0, 12)}...${r.token.slice(-8)}` : r.token,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+  }));
+  return res.json({ tokens });
+});
+
+// DELETE /api/auth/tokens/:id — revokes/deletes an API token
+app.delete('/api/auth/tokens/:id', requireAuth, (req: Request, res: Response) => {
+  const id = req.params.id;
+  db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
+  return res.json({ success: true, id });
 });
 
 // Public share endpoints (NO auth required).

@@ -25,6 +25,7 @@ import { Logo } from './Logo';
 import { WorkspaceSettings } from './WorkspaceSettings';
 import { UserMenuPopover } from './UserMenuPopover';
 import { IconColorPickerModal } from './IconColorPickerModal';
+import { ApiTokenModal } from './ApiTokenModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ImportModal } from './ImportModal';
 import {
@@ -508,6 +509,7 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
   const [settingsAnchor, setSettingsAnchor] = useState<DOMRect | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [apiTokenOpen, setApiTokenOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { id: currentId } = useParams();
@@ -875,6 +877,9 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
               onOpenColorPicker={() => {
                 setColorPickerOpen(true);
               }}
+              onOpenApiToken={() => {
+                setApiTokenOpen(true);
+              }}
             />
 
             <div className="sidebar-footer-actions">
@@ -911,6 +916,9 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
               onOpenColorPicker={() => {
                 setColorPickerOpen(true);
               }}
+              onOpenApiToken={() => {
+                setApiTokenOpen(true);
+              }}
             />
             <LanguageSwitcher />
             <button
@@ -934,6 +942,11 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void } = {}) {
       <IconColorPickerModal
         open={colorPickerOpen}
         onClose={() => setColorPickerOpen(false)}
+      />
+
+      <ApiTokenModal
+        open={apiTokenOpen}
+        onClose={() => setApiTokenOpen(false)}
       />
 
       <ImportModal

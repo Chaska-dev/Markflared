@@ -12,6 +12,7 @@ Pages, subpages, todos, code blocks, tables, public share links, file uploads an
 - **Frontend** — React 18 + Vite 5 + TypeScript
 - **Backend** — Cloudflare Pages Functions (Hono) · Express 5 (local dev)
 - **DB** — Cloudflare D1 (prod) · `better-sqlite3` (local)
+- **AI / MCP** — Official Model Context Protocol Server (`@modelcontextprotocol/sdk`)
 
 ## Run locally
 
@@ -25,6 +26,23 @@ pnpm run dev                # Express on :3000 + Vite on :5173
 ```
 
 Open <http://localhost:5173> and sign in with the credentials in `.dev.vars`.
+
+---
+
+## Model Context Protocol (MCP)
+
+Markflare includes a built-in **MCP server** allowing AI assistants (Claude Desktop, Cursor, Zed, Antigravity) to manage your workspace:
+
+- Import Markdown content & `.md` files directly into pages.
+- List workspace pages & inspect hierarchy.
+- Search pages and blocks.
+
+```bash
+pnpm run mcp        # Start MCP server on stdio
+pnpm run test:mcp   # Run end-to-end MCP test suite
+```
+
+See the [MCP Documentation & Examples](mcp/README.md) for client configuration guides.
 
 ---
 

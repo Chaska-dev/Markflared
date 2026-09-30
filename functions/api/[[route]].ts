@@ -83,9 +83,14 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-async function issueToken(username: string, secret: string): Promise<{ token: string; expiresAt: number }> {
-  const expiresAt = Date.now() + TOKEN_TTL_MS;
-  const payload = `${username}:${expiresAt}`;
+async function issueToken(
+  username: string,
+  secret: string,
+  ttlMs: number = TOKEN_TTL_MS,
+  tokenId?: string
+): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = Date.now() + ttlMs;
+  const payload = tokenId ? `${username}:${expiresAt}:api:${tokenId}` : `${username}:${expiresAt}`;
   const sig = await sha256Hex(`${payload}:${secret}`);
   // token = base64(payload).sig — payload encodes the expiry inside the token itself.
   const b64 = btoa(payload);
@@ -96,7 +101,11 @@ async function issueToken(username: string, secret: string): Promise<{ token: st
 // Cloudflare Pages backend and the local Express backend share the same
 // implementation.
 
-async function verifyToken(token: string, username: string, secret: string): Promise<{ ok: boolean; expired?: boolean }> {
+async function verifyToken(
+  token: string,
+  username: string,
+  secret: string
+): Promise<{ ok: boolean; expired?: boolean; isApi?: boolean; tokenId?: string }> {
   const idx = token.lastIndexOf('.');
   if (idx <= 0) return { ok: false };
   const b64 = token.slice(0, idx);
@@ -110,17 +119,17 @@ async function verifyToken(token: string, username: string, secret: string): Pro
   // Recompute the expected sig and compare in constant time.
   const expectedSig = await sha256Hex(`${payload}:${secret}`);
   if (!timingSafeEqual(sig, expectedSig)) return { ok: false };
-  // Validate that the payload belongs to this username (prevents token
-  // reuse across users).
-  const sep = payload.lastIndexOf(':');
-  if (sep <= 0) return { ok: false };
-  const userPart = payload.slice(0, sep);
+  const parts = payload.split(':');
+  if (parts.length < 2) return { ok: false };
+  const userPart = parts[0];
   if (!timingSafeEqual(userPart, username)) return { ok: false };
-  const expStr = payload.slice(sep + 1);
+  const expStr = parts[1];
   const exp = Number(expStr);
   if (!Number.isFinite(exp)) return { ok: false };
   if (Date.now() >= exp) return { ok: false, expired: true };
-  return { ok: true };
+  const isApi = parts[2] === 'api';
+  const tokenId = isApi ? parts[3] : undefined;
+  return { ok: true, isApi, tokenId };
 }
 
 function requireEnv(c: Context<{ Bindings: Bindings }>): { username: string; password: string; secret: string } | null {
@@ -171,6 +180,15 @@ async function ensureSchema(db: D1Database) {
         FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);
+
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT 'MCP Token',
+        token TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_id ON api_tokens(id);
     `);
     schemaInitialized = true;
   } catch (err) {
@@ -341,6 +359,12 @@ const authMiddleware = async (c: Context<{ Bindings: Bindings }>, next: () => Pr
   if (!v.ok) {
     return c.json({ error: v.expired ? 'Session expired' : 'Unauthorized' }, 401);
   }
+  if (v.isApi && v.tokenId) {
+    const row = await c.env.DB.prepare('SELECT id FROM api_tokens WHERE id = ?').bind(v.tokenId).first();
+    if (!row) {
+      return c.json({ error: 'Token has been revoked' }, 401);
+    }
+  }
   await next();
 };
 
@@ -349,6 +373,45 @@ app.use('/blocks/*', authMiddleware);
 app.use('/files/upload', authMiddleware);
 app.use('/workspace/*', authMiddleware);
 app.use('/search', authMiddleware);
+app.use('/auth/token', authMiddleware);
+app.use('/auth/tokens', authMiddleware);
+app.use('/auth/tokens/*', authMiddleware);
+
+app.post('/auth/token', async (c) => {
+  const env = requireEnv(c);
+  if (!env) return c.json({ error: 'Service unavailable' }, 503);
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    // optional body
+  }
+  const name = typeof body?.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 100) : 'MCP Token';
+  const expiresInDays = Number(body?.expiresInDays) || 365;
+  const ttlMs = expiresInDays * 24 * 60 * 60 * 1000;
+  const id = crypto.randomUUID();
+  const { token, expiresAt } = await issueToken(env.username, env.secret, ttlMs, id);
+  await c.env.DB.prepare('INSERT INTO api_tokens (id, name, token, expires_at) VALUES (?, ?, ?, ?)').bind(id, name, token, expiresAt).run();
+  return c.json({ id, name, token, expiresAt, createdAt: new Date().toISOString() });
+});
+
+app.get('/auth/tokens', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT id, name, token, created_at, expires_at FROM api_tokens ORDER BY created_at DESC').all();
+  const tokens = (results || []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    tokenPreview: r.token.length > 24 ? `${r.token.slice(0, 12)}...${r.token.slice(-8)}` : r.token,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+  }));
+  return c.json({ tokens });
+});
+
+app.delete('/auth/tokens/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM api_tokens WHERE id = ?').bind(id).run();
+  return c.json({ success: true, id });
+});
 
 // Share management (auth-gated) — endpoints for the page owner to create,
 // query, and deactivate the page's public link. Each page has at most ONE

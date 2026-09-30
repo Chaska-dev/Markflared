@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "markflare": {
+      "command": "npx",
+      "args": ["-y", "tsx", "d:/Codigos/Markflare/mcp/index.ts"],
+      "env": {
+        "MARKFLARE_URL": "http://localhost:3000",
+        "MARKFLARE_API_TOKEN": "YOUR_API_TOKEN_HERE"
+      }
+    }
+  }
+}

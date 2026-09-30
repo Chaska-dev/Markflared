@@ -59,16 +59,25 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-export async function issueToken(username: string, secret: string): Promise<{ token: string; expiresAt: number }> {
-  const expiresAt = Date.now() + TOKEN_TTL_MS;
-  const payload = `${username}:${expiresAt}`;
+export async function issueToken(
+  username: string,
+  secret: string,
+  ttlMs: number = TOKEN_TTL_MS,
+  tokenId?: string
+): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = Date.now() + ttlMs;
+  const payload = tokenId ? `${username}:${expiresAt}:api:${tokenId}` : `${username}:${expiresAt}`;
   const sig = await sha256Hex(`${payload}:${secret}`);
   // token = base64(payload).sig
   const b64 = Buffer.from(payload, 'utf8').toString('base64');
   return { token: `${b64}.${sig}`, expiresAt };
 }
 
-export async function verifyToken(token: string, username: string, secret: string): Promise<{ ok: boolean; expired?: boolean }> {
+export async function verifyToken(
+  token: string,
+  username: string,
+  secret: string
+): Promise<{ ok: boolean; expired?: boolean; isApi?: boolean; tokenId?: string }> {
   const idx = token.lastIndexOf('.');
   if (idx <= 0) return { ok: false };
   const b64 = token.slice(0, idx);
@@ -81,15 +90,17 @@ export async function verifyToken(token: string, username: string, secret: strin
   }
   const expectedSig = await sha256Hex(`${payload}:${secret}`);
   if (!timingSafeEqual(sig, expectedSig)) return { ok: false };
-  const sep = payload.lastIndexOf(':');
-  if (sep <= 0) return { ok: false };
-  const userPart = payload.slice(0, sep);
+  const parts = payload.split(':');
+  if (parts.length < 2) return { ok: false };
+  const userPart = parts[0];
   if (!timingSafeEqual(userPart, username)) return { ok: false };
-  const expStr = payload.slice(sep + 1);
+  const expStr = parts[1];
   const exp = Number(expStr);
   if (!Number.isFinite(exp)) return { ok: false };
   if (Date.now() >= exp) return { ok: false, expired: true };
-  return { ok: true };
+  const isApi = parts[2] === 'api';
+  const tokenId = isApi ? parts[3] : undefined;
+  return { ok: true, isApi, tokenId };
 }
 
 // In-memory per-IP rate limit. Workers (Cloudflare) don't share state across
