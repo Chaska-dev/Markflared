@@ -37,7 +37,7 @@ const CLIENT_OPTIONS: ClientOption[] = [
   { id: 'cursor', label: 'Cursor', hint: '.cursor/mcp.json' },
   { id: 'claude_desktop', label: 'Claude Desktop', hint: 'claude_desktop_config.json' },
   { id: 'claude_code', label: 'Claude Code', hint: 'Terminal CLI' },
-  { id: 'antigravity', label: 'Antigravity', hint: 'antigravity/mcp/' },
+  { id: 'antigravity', label: 'Antigravity', hint: 'mcp_config.json' },
   { id: 'env', label: '.env', hint: 'Environment variables' },
 ];
 
@@ -190,7 +190,7 @@ export function ApiTokenModal({ open, onClose }: Props) {
             mcpServers: {
               markflare: {
                 command: 'npx',
-                args: ['-y', 'tsx', 'd:/Codigos/Markflare/mcp/index.ts'],
+                args: ['-y', 'tsx', 'path/to/markflare/mcp/index.ts'],
                 env: {
                   MARKFLARE_URL: backendUrl,
                   MARKFLARE_API_TOKEN: currentToken,

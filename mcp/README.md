@@ -66,7 +66,7 @@ Add the server definition to your configuration file:
   "mcpServers": {
     "markflare": {
       "command": "npx",
-      "args": ["-y", "tsx", "d:/Codigos/Markflare/mcp/index.ts"],
+      "args": ["-y", "tsx", "path/to/markflare/mcp/index.ts"],
       "env": {
         "MARKFLARE_URL": "http://localhost:3000",
         "MARKFLARE_API_TOKEN": "YOUR_TOKEN_HERE"
@@ -86,7 +86,7 @@ Add to `.cursor/mcp.json` or your Cursor MCP settings:
   "mcpServers": {
     "markflare": {
       "command": "npx",
-      "args": ["-y", "tsx", "d:/Codigos/Markflare/mcp/index.ts"],
+      "args": ["-y", "tsx", "mcp/index.ts"],
       "env": {
         "MARKFLARE_URL": "http://localhost:3000",
         "MARKFLARE_API_TOKEN": "YOUR_TOKEN_HERE"
