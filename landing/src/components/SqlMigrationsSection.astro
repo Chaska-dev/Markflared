@@ -1,4 +1,6 @@
 ---
+import Icon from './Icon.astro';
+
 interface Props {
   lang?: 'es' | 'en';
 }
@@ -216,7 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_api_tokens_id ON api_tokens(id);`;
 
     <!-- D1 Rebuild Pattern Tip -->
     <div class="d1-tip-card">
-      <div class="tip-icon">ℹ️</div>
+      <Icon name="info" class="tip-icon" size={20} />
       <div class="tip-content">
         <h4>{isEs ? 'Nota sobre la evolución de esquemas en Cloudflare D1' : 'Note on Cloudflare D1 schema evolution'}</h4>
         <p>
@@ -380,8 +382,9 @@ CREATE INDEX IF NOT EXISTS idx_api_tokens_id ON api_tokens(id);`;
   }
 
   .tip-icon {
-    font-size: 20px;
     flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--text-tertiary);
   }
 
   .tip-content h4 {

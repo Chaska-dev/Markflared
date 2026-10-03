@@ -346,12 +346,16 @@ const isEs = lang === 'es';
     border-radius: var(--radius-md);
     padding: 18px;
     display: flex;
+    align-items: flex-start;
     gap: 12px;
   }
 
+  /* The icon is an SVG now, so the old font-size did nothing and the flex row
+     stretched it. Optically centre it on the title's line box instead. */
   .guarantee-icon {
-    font-size: 22px;
     flex-shrink: 0;
+    margin-top: -2px;
+    color: var(--text-tertiary);
   }
 
   .guarantee-content h4 {
