@@ -41,7 +41,7 @@ const sqlBlock2 = `CREATE TABLE IF NOT EXISTS files (
   name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
+  storage TEXT NOT NULL DEFAULT 'r2',
   page_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -67,6 +67,16 @@ const sqlBlock4 = `CREATE TABLE IF NOT EXISTS page_shares (
 );
 
 CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);`;
+
+const sqlBlock5 = `CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT 'MCP Token',
+  token TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_tokens_id ON api_tokens(id);`;
 ---
 
 <section id="migrations" class="migrations-section">
@@ -104,6 +114,10 @@ CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);`;
           <span class="sql-badge">Bloque 4</span>
           <span>0004_shares.sql</span>
         </button>
+        <button class="sql-tab-btn" data-sql-tab="sql-5">
+          <span class="sql-badge">Bloque 5</span>
+          <span>0005_api_tokens.sql</span>
+        </button>
       </div>
 
       <!-- SQL Tab Content Panels -->
@@ -131,7 +145,7 @@ CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);`;
           <div class="sql-panel-header">
             <div class="header-info">
               <strong>0002_files.sql</strong>
-              <span>{isEs ? 'Crea la tabla files para blobs base64 de imágenes y adjuntos' : 'Creates files table for base64 blob attachments'}</span>
+              <span>{isEs ? 'Metadata de los adjuntos; los bytes viven en R2, no en D1' : 'Attachment metadata — the bytes live in R2, not D1'}</span>
             </div>
             <button class="btn btn-primary btn-sm" data-copy-target={sqlBlock2}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -178,6 +192,24 @@ CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);`;
             </button>
           </div>
           <pre class="sql-code-view"><code>{sqlBlock4}</code></pre>
+        </div>
+
+        <!-- SQL 5 -->
+        <div id="sql-5" class="sql-panel">
+          <div class="sql-panel-header">
+            <div class="header-info">
+              <strong>0005_api_tokens.sql</strong>
+              <span>{isEs ? 'Tokens de API para el servidor MCP, la CLI y agentes' : 'API tokens for the MCP server, the CLI, and agents'}</span>
+            </div>
+            <button class="btn btn-primary btn-sm" data-copy-target={sqlBlock5}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>{isEs ? 'Copiar Bloque 5' : 'Copy Block 5'}</span>
+            </button>
+          </div>
+          <pre class="sql-code-view"><code>{sqlBlock5}</code></pre>
         </div>
       </div>
     </div>

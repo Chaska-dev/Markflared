@@ -39,9 +39,9 @@ const features = isEs
       {
         tag: 'ALMACENAMIENTO',
         title: 'Archivos y Medios Integrados',
-        description: 'Sube imágenes y adjuntos de hasta 10 MB. Almacenados en blobs base64 servidos directamente desde D1 o disco local sin depender de S3.',
+        description: 'Sube imágenes y adjuntos de hasta 25 MB. Los bytes van a un bucket R2 privado y en D1 queda solo la metadata, así la base nunca se llena de blobs.',
         icon: '🖼️',
-        highlight: 'Límite de 10 MB por archivo',
+        highlight: 'Límite de 25 MB por archivo',
       },
       {
         tag: 'PORTABILIDAD',
@@ -97,9 +97,9 @@ const features = isEs
       {
         tag: 'STORAGE',
         title: 'Integrated File & Image Uploads',
-        description: 'Upload images and files up to 10 MB. Encoded into blobs and streamed directly from D1 or local disk without external S3 buckets.',
+        description: 'Upload images and files up to 25 MB. The bytes go to a private R2 bucket and only the metadata stays in D1, so the database never fills up with blobs.',
         icon: '🖼️',
-        highlight: 'Up to 10 MB per file',
+        highlight: 'Up to 25 MB per file',
       },
       {
         tag: 'PORTABILITY',

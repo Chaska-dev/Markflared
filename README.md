@@ -12,6 +12,25 @@ A self-hosted, block-based note-taking workspace that runs entirely on **Cloudfl
 Pages with nested subpages, to-do lists, code blocks, tables, public share links, image
 and file uploads, and a bilingual interface (English / Spanish).
 
+## Screenshots
+
+Real captures of the app running — no mockups. The set below was shot in English; the
+same pages exist in Spanish under `landing/public/screenshots/es`, and the landing page
+swaps between the two based on which one you're reading.
+
+| The block editor | Tables and code |
+|---|---|
+| ![The block editor](landing/public/screenshots/en/app-tour.webp) | ![Tables and code](landing/public/screenshots/en/app-arquitectura.webp) |
+
+| Task lists | On a phone |
+|---|---|
+| ![Task lists](landing/public/screenshots/en/app-pendientes.webp) | <img src="landing/public/screenshots/en/app-mobile.webp" width="260" alt="Markflare on a phone" /> |
+
+> They live under `landing/public/` because that is the only directory Astro serves
+> to the browser, so the site and this README read the same files. Regenerate them
+> with `scripts/seed-demo.cjs es|en` followed by `scripts/shoot-app.cjs`, both in the
+> gitignored `scripts/` folder.
+
 ---
 
 ## What you get
@@ -31,16 +50,17 @@ and file uploads, and a bilingual interface (English / Spanish).
 
 | # | Section | What it covers |
 |---|---------|----------------|
-| 1 | [Stack](#stack) | What it's built with |
-| 2 | [The three Cloudflare pieces](#the-three-cloudflare-pieces) | What you're actually creating |
-| 3 | [Deploy](#deploy) | Three methods — pick one |
-| 4 | [Run locally](#run-locally) | Develop on your machine |
-| 5 | [File storage (R2)](#file-storage-r2) | Why uploads aren't in the database |
-| 6 | [Database schema](#database-schema) | Every table, as copy-paste SQL |
-| 7 | [API](#api) | All HTTP routes |
-| 8 | [Configuration](#configuration) | Environment variables |
-| 9 | [Model Context Protocol](#model-context-protocol-mcp) | AI assistant integration |
-| 10 | [Notes](#notes) | Design decisions worth knowing |
+| 1 | [Screenshots](#screenshots) | The app, in English and Spanish |
+| 2 | [Stack](#stack) | What it's built with |
+| 3 | [The three Cloudflare pieces](#the-three-cloudflare-pieces) | What you're actually creating |
+| 4 | [Deploy](#deploy) | Three methods — pick one |
+| 5 | [Run locally](#run-locally) | Develop on your machine |
+| 6 | [File storage (R2)](#file-storage-r2) | Why uploads aren't in the database |
+| 7 | [Database schema](#database-schema) | Every table, as copy-paste SQL |
+| 8 | [API](#api) | All HTTP routes |
+| 9 | [Configuration](#configuration) | Environment variables |
+| 10 | [Model Context Protocol](#model-context-protocol-mcp) | AI assistant integration |
+| 11 | [Notes](#notes) | Design decisions worth knowing |
 
 ---
 
