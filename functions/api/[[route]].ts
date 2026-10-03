@@ -15,6 +15,11 @@ const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const LOGIN_RATE_WINDOW_MS = 60 * 1000; // 1-minute window
 const LOGIN_RATE_MAX = 5; // max 5 attempts / min / IP
 
+// An image/file block points at its upload through `content`, but that column
+// can also hold an http(s) URL or a data: URI. Only a bare UUID is a storage
+// key — never treat anything else as one.
+const STORED_FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // In-memory per-instance rate limit. Not perfect at global scale (Workers
 // don't share state across isolates) but serves as base defense against
 // casual brute force for a personal app. Production multi-tenant should
@@ -652,11 +657,7 @@ app.delete('/pages/:id', async (c) => {
   const fileIds = new Set<string>();
   for (const row of byPage) fileIds.add(row.id);
   for (const row of byBlock) {
-    // A block can hold an http(s) URL or a data: URI instead of a stored
-    // file — only bare UUIDs are R2 keys.
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.content || '')) {
-      fileIds.add(row.content);
-    }
+    if (STORED_FILE_ID.test(row.content || '')) fileIds.add(row.content);
   }
 
   // Drop the R2 objects before the metadata. DeleteObject is free on R2.
@@ -810,9 +811,30 @@ app.put('/blocks/:id', async (c) => {
 });
 
 // 8. DELETE /api/blocks/:id
+// An image/file block owns its upload, so removing the block has to remove the
+// bytes too. But the same file id can be referenced by several blocks (a
+// copied or duplicated image), so the upload is only dropped once no block
+// points at it any more — deleting one copy must not break the others.
 app.delete('/blocks/:id', async (c) => {
   const id = c.req.param('id');
+  const block: any = await c.env.DB.prepare('SELECT type, content FROM blocks WHERE id = ?').bind(id).first();
   await c.env.DB.prepare('DELETE FROM blocks WHERE id = ?').bind(id).run();
+
+  if (!block || (block.type !== 'image' && block.type !== 'file')) {
+    return c.json({ success: true });
+  }
+  if (!STORED_FILE_ID.test(block.content || '')) {
+    return c.json({ success: true });
+  }
+
+  const stillReferenced: any = await c.env.DB
+    .prepare("SELECT 1 AS x FROM blocks WHERE type IN ('image', 'file') AND content = ? LIMIT 1")
+    .bind(block.content)
+    .first();
+  if (stillReferenced) return c.json({ success: true });
+
+  await c.env.DB.prepare('DELETE FROM files WHERE id = ?').bind(block.content).run();
+  if (c.env.BUCKET) await c.env.BUCKET.delete(block.content);
   return c.json({ success: true });
 });
 

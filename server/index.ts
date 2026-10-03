@@ -20,6 +20,11 @@ import {
   timingSafeEqual,
   AuthEnv,
 } from './auth';
+
+// An image/file block points at its upload through `content`, but that column
+// can also hold an http(s) URL or a data: URI. Only a bare UUID is a storage
+// key — never treat anything else as one.
+const STORED_FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { parseMarkdownToBlocks } from './shared/markdown';
 
 // Bootstrap
@@ -461,11 +466,7 @@ app.delete('/api/pages/:id', (req, res) => {
   const fileIds = new Set<string>();
   for (const row of byPage) fileIds.add(row.id);
   for (const row of byBlock) {
-    // A block can hold an http(s) URL or a data: URI instead of a stored file —
-    // only bare UUIDs are storage keys.
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.content || '')) {
-      fileIds.add(row.content);
-    }
+    if (STORED_FILE_ID.test(row.content || '')) fileIds.add(row.content);
   }
   const deleteFile = db.prepare('DELETE FROM files WHERE id = ?');
 
@@ -575,10 +576,29 @@ app.put('/api/blocks/:id', (req, res) => {
 });
 
 // 8. DELETE /api/blocks/:id
+// Mirrors the Pages function: removing an image/file block also removes the
+// upload from disk, but only once no other block references the same id.
 app.delete('/api/blocks/:id', (req, res) => {
   const id = req.params.id;
+  const block: any = db.prepare('SELECT type, content FROM blocks WHERE id = ?').get(id);
   db.prepare('DELETE FROM blocks WHERE id = ?').run(id);
-  res.json({ success: true });
+
+  if (!block || (block.type !== 'image' && block.type !== 'file')) {
+    return res.json({ success: true });
+  }
+  if (!STORED_FILE_ID.test(block.content || '')) {
+    return res.json({ success: true });
+  }
+
+  const stillReferenced: any = db
+    .prepare("SELECT 1 AS x FROM blocks WHERE type IN ('image', 'file') AND content = ? LIMIT 1")
+    .get(block.content);
+  if (stillReferenced) return res.json({ success: true });
+
+  db.prepare('DELETE FROM files WHERE id = ?').run(block.content);
+  const filePath = path.join(uploadsDir, block.content);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  return res.json({ success: true });
 });
 
 // 9. PUT /api/blocks/reorder
