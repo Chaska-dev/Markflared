@@ -448,13 +448,43 @@ app.delete('/api/pages/:id', (req, res) => {
     `DELETE FROM blocks WHERE type = 'subpage' AND content IN (${pageIds.map(() => '?').join(',') || "''"})`
   );
   const deletePage = db.prepare('DELETE FROM pages WHERE id = ?');
+
+  // Files come from two sources, same as the Pages function: the rows attached
+  // to these pages, plus image/file blocks pointing at a stored file by ID. The
+  // bytes on disk have to go too — files.page_id is ON DELETE SET NULL, so
+  // deleting the page alone would strand them forever.
+  const inList = pageIds.map(() => '?').join(',') || "''";
+  const byPage = db.prepare(`SELECT id FROM files WHERE page_id IN (${inList})`).all(...pageIds) as any[];
+  const byBlock = db.prepare(
+    `SELECT content FROM blocks WHERE type IN ('image', 'file') AND page_id IN (${inList})`
+  ).all(...pageIds) as any[];
+  const fileIds = new Set<string>();
+  for (const row of byPage) fileIds.add(row.id);
+  for (const row of byBlock) {
+    // A block can hold an http(s) URL or a data: URI instead of a stored file —
+    // only bare UUIDs are storage keys.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.content || '')) {
+      fileIds.add(row.content);
+    }
+  }
+  const deleteFile = db.prepare('DELETE FROM files WHERE id = ?');
+
   const tx = db.transaction((ids: string[]) => {
     deleteOrphanSubpageRefs.run(...ids);
     for (const pid of ids) deleteBlocks.run(pid);
+    for (const fid of fileIds) deleteFile.run(fid);
     for (const pid of ids) deletePage.run(pid);
   });
   tx(pageIds);
-  res.json({ success: true, deletedPages: pageIds.length });
+
+  // Unlink only after the transaction commits: a rollback must not leave rows
+  // pointing at bytes that are already gone.
+  for (const fid of fileIds) {
+    const filePath = path.join(uploadsDir, fid);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+
+  res.json({ success: true, deletedPages: pageIds.length, deletedFiles: fileIds.size });
 });
 
 // 5b. GET /api/pages/:id/cascade-count — how many subpages and blocks would
@@ -636,7 +666,7 @@ app.post('/api/files/upload', requireAuth, upload.single('file'), (req, res) => 
   fs.writeFileSync(filePath, file.buffer);
 
   db.prepare(
-    'INSERT INTO files (id, name, mime_type, size, data, page_id) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO files (id, name, mime_type, size, storage, page_id) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, file.originalname.slice(0, 255), file.mimetype.slice(0, 128), file.size, 'disk', pageId);
 
   const row: any = db.prepare(
@@ -646,28 +676,22 @@ app.post('/api/files/upload', requireAuth, upload.single('file'), (req, res) => 
   res.json({ file: row });
 });
 
-// 11. GET /api/files/:id (supports disk and base64 fallback).
+// 11. GET /api/files/:id — serves from uploads/ on disk. No base64 fallback:
+// local dev mirrors the production path, which reads bytes from object storage.
 app.get('/api/files/:id', (req, res) => {
   const id = req.params.id;
   const filePath = path.join(uploadsDir, id);
 
-  const file: any = db.prepare('SELECT * FROM files WHERE id = ?').get(id);
+  const file: any = db.prepare('SELECT id, mime_type FROM files WHERE id = ?').get(id);
   if (!file) return res.status(404).json({ error: 'Not found' });
 
-  if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', file.mime_type);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    return res.sendFile(filePath);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File data missing' });
   }
 
-  if (file.data && file.data !== 'disk' && file.data !== 'r2') {
-    const buffer = Buffer.from(file.data, 'base64');
-    res.setHeader('Content-Type', file.mime_type);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    return res.send(buffer);
-  }
-
-  return res.status(404).json({ error: 'File data missing' });
+  res.setHeader('Content-Type', file.mime_type);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  return res.sendFile(filePath);
 });
 
 // Listen

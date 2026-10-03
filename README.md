@@ -27,6 +27,8 @@ pnpm run dev                # Express on :3000 + Vite on :5173
 
 Open <http://localhost:5173> and sign in with the credentials in `.dev.vars`.
 
+> **Upgrading from an older checkout?** Migration files are edited in place and tracked by name in `_migrations_applied`, so an already-migrated `data/markflare.db` will **not** pick up schema changes. Delete `data/` and re-run `pnpm run db:migrate:all` to rebuild it from scratch.
+
 ---
 
 ## Model Context Protocol (MCP)
@@ -43,6 +45,62 @@ pnpm run test:mcp   # Run end-to-end MCP test suite
 ```
 
 See the [MCP Documentation & Examples](mcp/README.md) for client configuration guides.
+
+---
+
+## File storage (R2)
+
+Images and attachments never go into D1. In production they land in an R2 bucket; in local dev they land in `uploads/` on disk. The `files` table holds metadata only, plus a `storage` column recording which backend owns the bytes. Uploads are capped at **25 MB**.
+
+R2 is what makes that cap possible — a D1 row tops out at 2 MB, and base64 inflates by a further ~33%.
+
+The free tier covers a personal workspace comfortably: 10 GB-month of storage, 1M writes and 10M reads per month, and no egress charge. Past that it's $0.015/GB-month.
+
+### 1. Create the bucket
+
+**R2 → Overview → Create bucket**
+
+- Bucket name: `markflare-files` ← the default this project expects
+
+The name itself doesn't matter as long as you bind it under the variable name `BUCKET` in the next step. `markflare-files` is the default so the steps below are copy-pasteable.
+
+> **Leave the bucket private.** Don't enable the public `r2.dev` domain. Files are served through `/api/files/:id`, which the Worker handles; a public bucket would bypass that.
+
+### 2. Bind it to your Pages project
+
+**Workers & Pages → your project → Settings → Functions → R2 bucket bindings → Add**
+
+| Field         | Value             |
+| ------------- | ----------------- |
+| Variable name | `BUCKET`          |
+| R2 bucket     | `markflare-files` |
+
+The variable name has to be exactly `BUCKET` — that's the name the Worker reads. Uploads return `503` without it, and there is deliberately no fallback path that writes into D1 instead.
+
+> Pages injects bindings into the Worker on the **next deploy**. Add the binding, then redeploy before testing uploads.
+
+### Already deployed?
+
+Migration files are edited in place, so the new `files` shape only lands on a **fresh** database. If you already have a D1 with the old `data` column, run this once in the D1 Console:
+
+```sql
+DROP TABLE IF EXISTS files;
+
+CREATE TABLE files (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  storage TEXT NOT NULL DEFAULT 'r2',
+  page_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_page ON files(page_id);
+```
+
+Images already embedded in your pages will 404 afterwards — their bytes went out with the old table. Re-upload them.
 
 ---
 
@@ -139,7 +197,7 @@ CREATE TABLE IF NOT EXISTS files (
   name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
+  storage TEXT NOT NULL DEFAULT 'r2',
   page_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -195,6 +253,9 @@ In **Settings → Functions**:
 - **D1 database bindings → Add**:
   - Variable name: `DB`
   - D1 database: `markflare-db` (the one from step 2.2)
+- **R2 bucket bindings → Add**:
+  - Variable name: `BUCKET`
+  - R2 bucket: `markflare-files` (see [File storage](#file-storage-r2))
 
 In **Settings → Variables and secrets → Add** (Encrypt type, not Plaintext):
 
@@ -286,7 +347,7 @@ CREATE TABLE IF NOT EXISTS files (
   name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
+  storage TEXT NOT NULL DEFAULT 'r2',
   page_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -338,6 +399,9 @@ In **Settings → Functions**:
 - **D1 database bindings → Add**:
   - Variable name: `DB`
   - D1 database: `markflare-db`
+- **R2 bucket bindings → Add**:
+  - Variable name: `BUCKET`
+  - R2 bucket: `markflare-files` (see [File storage](#file-storage-r2))
 
 In **Settings → Variables and secrets → Add** (Encrypt type, not Plaintext):
 
@@ -511,7 +575,7 @@ CREATE TABLE IF NOT EXISTS files (
   name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
+  storage TEXT NOT NULL DEFAULT 'r2',
   page_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -555,6 +619,9 @@ In **Settings → Functions**:
 - **D1 database bindings → Add**:
   - Variable name: `DB`
   - D1 database: `markflare-db` (the one from step 5.3)
+- **R2 bucket bindings → Add**:
+  - Variable name: `BUCKET`
+  - R2 bucket: `markflare-files` (see [File storage](#file-storage-r2))
 
 In **Settings → Variables and secrets → Add** (Encrypt type, not Plaintext):
 
@@ -585,7 +652,7 @@ All migrations live in `migrations/NNNN_*.sql`, run in lexicographic order, wrap
 | File                   | Adds                                                                  |
 | ---------------------- | --------------------------------------------------------------------- |
 | `0001_initial.sql`     | `pages`, `blocks` (with `parent_id` + `collapsed`), indexes          |
-| `0002_files.sql`       | `files` table (base64 blobs)                                          |
+| `0002_files.sql`       | `files` table (metadata only — bytes live in R2)                |
 | `0003_workspace.sql`   | `workspace` singleton (sidebar name + icon)                           |
 | `0004_shares.sql`      | `page_shares` — public share tokens, with `revoked` tombstone column  |
 
@@ -609,8 +676,8 @@ All routes are mounted under `/api`. The 🔒 routes require a Bearer token from
 | PUT    | `/api/blocks/:id`                 | 🔒   | Update a block (reparenting is cyclic-safe) |
 | DELETE | `/api/blocks/:id`                 | 🔒   | Delete a block                           |
 | PUT    | `/api/blocks/reorder`             | 🔒   | Batch reorder blocks                     |
-| POST   | `/api/files/upload`               | 🔒   | Upload a file (≤ 10 MB, multipart)       |
-| GET    | `/api/files/:id`                  | 🔒   | Stream a file                            |
+| POST   | `/api/files/upload`               | 🔒   | Upload a file (≤ 25 MB, multipart)       |
+| GET    | `/api/files/:id`                  | —    | Stream a file (public, so shares render) |
 | GET    | `/api/workspace`                  | 🔒   | Get sidebar name + icon                  |
 | PUT    | `/api/workspace`                  | 🔒   | Update workspace                         |
 | POST   | `/api/pages/:id/share`            | 🔒   | Activate a public share                  |
