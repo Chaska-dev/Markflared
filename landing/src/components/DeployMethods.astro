@@ -204,11 +204,19 @@ pnpm install</code></pre>
               </p>
             </li>
             <li class="step-item">
+              <span class="step-title">{isEs ? 'Crear el bucket de archivos en R2:' : 'Create the R2 file bucket:'}</span>
+              <p class="step-note">
+                {isEs
+                  ? 'R2 → Overview → <strong>Create bucket</strong> → Nombre: markflare-files. Déjalo privado, no actives el dominio r2.dev.'
+                  : 'R2 → Overview → <strong>Create bucket</strong> → Name: markflare-files. Keep it private, do not enable the r2.dev domain.'}
+              </p>
+            </li>
+            <li class="step-item">
               <span class="step-title">{isEs ? 'Ejecutar las migraciones SQL en la consola de D1:' : 'Apply SQL migrations in D1 Console:'}</span>
               <p class="step-note">
                 {isEs
-                  ? 'Ve a la pestaña Console de markflare-db y ejecuta los 4 bloques SQL que encontrarás en la sección de Migraciones más abajo.'
-                  : 'Go to markflare-db Console tab and run each of the 4 SQL blocks from the Migrations section below.'}
+                  ? 'Ve a la pestaña Console de markflare-db y ejecuta los 5 bloques SQL que encontrarás en la sección de Migraciones más abajo.'
+                  : 'Go to markflare-db Console tab and run each of the 5 SQL blocks from the Migrations section below.'}
               </p>
             </li>
             <li class="step-item">
@@ -218,10 +226,10 @@ pnpm install</code></pre>
               </p>
             </li>
             <li class="step-item">
-              <span class="step-title">{isEs ? 'Configurar D1 Binding y Secretos en Settings:' : 'Configure D1 Binding and Secrets in Settings:'}</span>
+              <span class="step-title">{isEs ? 'Configurar los bindings y los secretos en Settings:' : 'Configure the bindings and secrets in Settings:'}</span>
               <p class="step-note">
-                En <strong>Settings → Functions</strong>: Añade D1 database binding con Variable name <code>DB</code> vinculado a <code>markflare-db</code>.<br/>
-                En <strong>Settings → Variables and secrets</strong>: Añade <code>AUTH_USERNAME</code>, <code>AUTH_PASSWORD</code> y <code>AUTH_SECRET</code> como tipo <em>Encrypt</em>.
+                En <strong>Settings → Functions</strong>: añade el binding de base de datos con Variable name <code>DB</code> vinculado a <code>markflare-db</code>, y el binding de R2 con Variable name <code>BUCKET</code> vinculado a <code>markflare-files</code>.<br/>
+                En <strong>Settings → Variables and secrets</strong>: añade <code>AUTH_USERNAME</code>, <code>AUTH_PASSWORD</code> y <code>AUTH_SECRET</code> como tipo <em>Encrypt</em>.
               </p>
             </li>
           </ol>
@@ -292,11 +300,19 @@ pnpm run build</code></pre>
               </p>
             </li>
             <li class="step-item">
+              <span class="step-title">{isEs ? 'Crear el bucket de archivos en R2:' : 'Create the R2 file bucket:'}</span>
+              <p class="step-note">
+                {isEs
+                  ? 'R2 → Overview → Create bucket → <code>markflare-files</code>. El nombre del bucket aparece en el <code>[[r2_buckets]]</code> de la plantilla siguiente.'
+                  : 'R2 → Overview → Create bucket → <code>markflare-files</code>. The bucket name goes in the <code>[[r2_buckets]]</code> block of the template below.'}
+              </p>
+            </li>
+            <li class="step-item">
               <span class="step-title">{isEs ? 'Crear wrangler.toml en la raíz del proyecto:' : 'Create wrangler.toml in project root:'}</span>
               <div class="code-container">
                 <div class="code-header">
                   <span>wrangler.toml</span>
-                  <button class="code-copy-btn" data-copy-target="name = &quot;markflare&quot;&#10;compatibility_date = &quot;2024-09-01&quot;&#10;pages_build_output_dir = &quot;dist&quot;&#10;&#10;[[d1_databases]]&#10;binding = &quot;DB&quot;&#10;database_name = &quot;markflare-db&quot;&#10;database_id = &quot;TU-D1-UUID-AQUI&quot;">
+                  <button class="code-copy-btn" data-copy-target="name = &quot;markflare&quot;&#10;compatibility_date = &quot;2024-09-01&quot;&#10;pages_build_output_dir = &quot;dist&quot;&#10;&#10;[[d1_databases]]&#10;binding = &quot;DB&quot;&#10;database_name = &quot;markflare-db&quot;&#10;database_id = &quot;TU-D1-UUID-AQUI&quot;&#10;&#10;[[r2_buckets]]&#10;binding = &quot;BUCKET&quot;&#10;bucket_name = &quot;markflare-files&quot;">
                     <span>{isEs ? 'Copiar plantilla' : 'Copy template'}</span>
                   </button>
                 </div>
@@ -307,7 +323,11 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "markflare-db"
-database_id = "PEGA-AQUI-TU-D1-UUID"</code></pre>
+database_id = "PEGA-AQUI-TU-D1-UUID"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "markflare-files"</code></pre>
               </div>
             </li>
             <li class="step-item">
@@ -366,8 +386,8 @@ Root directory: (dejar en blanco)</code></pre>
               <span class="step-title">{isEs ? 'Vincular D1 y Secretos:' : 'Attach D1 and Secrets:'}</span>
               <p class="step-note">
                 {isEs
-                  ? 'En Settings → Functions: Vincula variable DB a markflare-db. En Settings → Variables and secrets: Añade AUTH_USERNAME, AUTH_PASSWORD y AUTH_SECRET.'
-                  : 'In Settings → Functions: Bind DB to markflare-db. In Settings → Variables: Add AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET.'}
+                  ? 'En Settings → Functions: vincula DB a markflare-db y BUCKET a markflare-files. En Settings → Variables and secrets: añade AUTH_USERNAME, AUTH_PASSWORD y AUTH_SECRET.'
+                  : 'In Settings → Functions: bind DB to markflare-db and BUCKET to markflare-files. In Settings → Variables: add AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET.'}
               </p>
             </li>
           </ol>
