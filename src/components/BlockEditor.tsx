@@ -2,8 +2,10 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Block as BlockType, BlockType as BType } from '../types';
 import { Block } from './Block';
 import { SlashMenu } from './SlashMenu';
+import { UploadIcon, XIcon } from './Icons';
 import { api } from '../api/client';
 import { usePageContext } from '../contexts/PageContext';
+import { useLanguage } from '../i18n/LanguageContext';
 // Shared markdown parser (same module used by the backend on import). Used to
 // split multi-line or markdown-marked pastes into multiple blocks. The
 // "looks like markdown" heuristic lives in the handler; this is just the parser.
@@ -167,6 +169,16 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadRef = useRef<{ id: string, type: BType } | null>(null);
   const updaterRef = useRef<ReturnType<typeof debounceWithFlush> | null>(null);
+
+  // A file dragged over the editor lights up a drop overlay, so the gesture
+  // reads as "this will upload" instead of silently doing nothing. The depth
+  // counter is needed because dragenter/dragleave also fire for every child
+  // element the pointer crosses, so a plain boolean would flicker off.
+  const [isFileDrag, setIsFileDrag] = useState(false);
+  const fileDragDepth = useRef(0);
+  // Upload failures were console-only, which made a rejected file look like a
+  // dropped one that never arrived.
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Load initialBlocks when page changes (also on first mount).
   useEffect(() => {
@@ -704,6 +716,7 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
   };
 
   const { createPage, refreshPages } = usePageContext();
+  const { t } = useLanguage();
 
   const handleSlashSelect = async (type: BType) => {
     if (!slashMenu.blockId) return;
@@ -805,6 +818,11 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
       }, 0);
     } catch (err) {
       console.error('Upload failed', err);
+      setUploadError(
+        err instanceof Error && err.message
+          ? err.message
+          : t('editor.uploadFailed', { name: file.name })
+      );
     } finally {
       pendingUploadRef.current = null;
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -898,6 +916,55 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
     // clear on dragEnd.
   }, []);
 
+  const endFileDrag = useCallback(() => {
+    fileDragDepth.current = 0;
+    setIsFileDrag(false);
+  }, []);
+
+  // Only external file drags get the overlay. Dragging one of our own blocks
+  // keeps the existing line indicator, and mixing the two reads as noise.
+  const handleEditorDragEnter = useCallback((e: React.DragEvent) => {
+    if (draggingIdRef.current) return;
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    fileDragDepth.current += 1;
+    setIsFileDrag(true);
+  }, []);
+
+  const handleEditorDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    fileDragDepth.current = Math.max(0, fileDragDepth.current - 1);
+    if (fileDragDepth.current === 0) setIsFileDrag(false);
+  }, []);
+
+  // Upload a batch and insert one block per file, each one right after the
+  // previous. Shared by the three entry points (drop on a block, drop on the
+  // editor, paste) so they can't drift apart. `anchorId` is the block the
+  // chain starts after; null appends at the end of the document.
+  const insertFiles = useCallback(async (files: File[], anchorId: string | null) => {
+    let prevId = anchorId;
+    for (const file of files) {
+      try {
+        const isImg = file.type.startsWith('image/');
+        const res = await api.files.upload(file, pageId);
+        const newBlock = await createBlock(
+          prevId,
+          isImg ? 'image' : 'file',
+          res.file.id,
+          null,
+          file.name
+        );
+        if (newBlock) prevId = newBlock.id;
+      } catch (err) {
+        console.error('Error uploading file:', err);
+        setUploadError(
+          err instanceof Error && err.message
+            ? err.message
+            : t('editor.uploadFailed', { name: file.name })
+        );
+      }
+    }
+  }, [pageId, createBlock, t]);
+
   // Apply the drop: recalculate parent_id + position of the dragged block.
   // Rules:
   //   - top:    same parent as target, position just before.
@@ -907,24 +974,9 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-      const files = Array.from(e.dataTransfer.files);
-      let prevId = targetId;
-      for (const file of files) {
-        try {
-          const isImg = file.type.startsWith('image/');
-          const res = await api.files.upload(file, pageId);
-          const newBlock = await createBlock(
-            prevId,
-            isImg ? 'image' : 'file',
-            res.file.id,
-            null,
-            file.name
-          );
-          if (newBlock) prevId = newBlock.id;
-        } catch (err) {
-          console.error('Error uploading dropped file:', err);
-        }
-      }
+      endFileDrag();
+      setUploadError(null);
+      await insertFiles(Array.from(e.dataTransfer.files), targetId);
       return;
     }
 
@@ -958,30 +1010,18 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
         updaterRef.current?.debounced(targetId, { collapsed: false });
       }
     }
-  }, [blocks, computeDrop, computeDropPosition]);
+  }, [blocks, computeDrop, computeDropPosition, insertFiles, endFileDrag]);
 
   const handleEditorDrop = async (e: React.DragEvent) => {
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
       e.preventDefault();
       e.stopPropagation();
-      const files = Array.from(e.dataTransfer.files);
-      let prevId = blocks.length > 0 ? blocks[blocks.length - 1].id : null;
-      for (const file of files) {
-        try {
-          const isImg = file.type.startsWith('image/');
-          const res = await api.files.upload(file, pageId);
-          const newBlock = await createBlock(
-            prevId,
-            isImg ? 'image' : 'file',
-            res.file.id,
-            null,
-            file.name
-          );
-          if (newBlock) prevId = newBlock.id;
-        } catch (err) {
-          console.error('Error uploading dropped file:', err);
-        }
-      }
+      endFileDrag();
+      setUploadError(null);
+      await insertFiles(
+        Array.from(e.dataTransfer.files),
+        blocks.length > 0 ? blocks[blocks.length - 1].id : null
+      );
     }
   };
 
@@ -991,23 +1031,8 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
       const hasFiles = files.some(f => f.type.startsWith('image/') || f.size > 0);
       if (hasFiles) {
         e.preventDefault();
-        let prevId = blocks.length > 0 ? blocks[blocks.length - 1].id : null;
-        for (const file of files) {
-          try {
-            const isImg = file.type.startsWith('image/');
-            const res = await api.files.upload(file, pageId);
-            const newBlock = await createBlock(
-              prevId,
-              isImg ? 'image' : 'file',
-              res.file.id,
-              null,
-              file.name || (isImg ? 'image.png' : 'file')
-            );
-            if (newBlock) prevId = newBlock.id;
-          } catch (err) {
-            console.error('Error uploading pasted file:', err);
-          }
-        }
+        setUploadError(null);
+        await insertFiles(files, blocks.length > 0 ? blocks[blocks.length - 1].id : null);
       }
     }
   };
@@ -1021,8 +1046,10 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
 
   return (
     <div
-      className="block-editor"
+      className={`block-editor ${isFileDrag ? 'block-editor--file-drag' : ''}`}
       onDrop={handleEditorDrop}
+      onDragEnter={handleEditorDragEnter}
+      onDragLeave={handleEditorDragLeave}
       onDragOver={(e) => {
         if (e.dataTransfer?.types?.includes('Files') || draggingIdRef.current) {
           e.preventDefault();
@@ -1030,6 +1057,20 @@ export function BlockEditor({ pageId, initialBlocks }: Props) {
       }}
       onPaste={handleEditorPaste}
     >
+      {isFileDrag && (
+        <div className="block-editor-drop-hint" aria-hidden="true">
+          <UploadIcon />
+          <span>{t('editor.dropRelease')}</span>
+        </div>
+      )}
+      {uploadError && (
+        <div className="block-editor-upload-error" role="alert">
+          <span>{uploadError}</span>
+          <button type="button" onClick={() => setUploadError(null)} aria-label={t('editor.dismissError')}>
+            <XIcon />
+          </button>
+        </div>
+      )}
       <input
         type="file"
         ref={fileInputRef}

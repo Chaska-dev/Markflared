@@ -168,6 +168,9 @@ export const en = {
   'editor.removeColumn': 'Remove column',
   'editor.addRow': 'Add row',
   'editor.removeRow': 'Remove row',
+  'editor.dropRelease': 'Drop to upload',
+  'editor.uploadFailed': "Couldn't upload {{name}}",
+  'editor.dismissError': 'Dismiss',
 
   // Block context menu (transform + actions)
   'ctx.transformTo': 'Convert to:',
