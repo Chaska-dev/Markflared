@@ -35,7 +35,7 @@ and file uploads, and a bilingual interface (English / Spanish).
 | 2 | [The three Cloudflare pieces](#the-three-cloudflare-pieces) | What you're actually creating |
 | 3 | [Deploy](#deploy) | Three methods — pick one |
 | 4 | [Run locally](#run-locally) | Develop on your machine |
-| 5 | [File storage (R2)](#file-storage-r2) | Buckets and bindings |
+| 5 | [File storage (R2)](#file-storage-r2) | Why uploads aren't in the database |
 | 6 | [Database schema](#database-schema) | Every table, as copy-paste SQL |
 | 7 | [API](#api) | All HTTP routes |
 | 8 | [Configuration](#configuration) | Environment variables |
@@ -64,11 +64,11 @@ so the frontend can't tell the difference.
 If this is your first time deploying to Cloudflare, this section is the one that matters.
 You create three things, and they each have a job:
 
-| What | Cloudflare service | Job in plain language |
-|---|---|---|
-| The website | **Pages** | Serves the app and runs the API. It's the "web host". |
-| Your notes | **D1** | A SQLite database. Holds pages, blocks, and share links. |
-| Your images | **R2** | Object storage, like a private folder of files. |
+| What | Cloudflare service | Job in plain language | Created in |
+|---|---|---|---|
+| The website | **Pages** | Serves the app and runs the API. It's the "web host". | [step 1.4](#14-create-the-pages-project) |
+| Your notes | **D1** | A SQLite database. Holds pages, blocks, and share links. | [step 1.2](#12-create-the-database-and-the-bucket) |
+| Your images | **R2** | Object storage, like a private folder of files. | [step 1.2](#12-create-the-database-and-the-bucket) |
 
 Two of them are "bindings": you create them separately, then tell Pages "this variable is
 that database". The names are fixed and the code expects them:
@@ -136,23 +136,45 @@ git remote add origin https://github.com/<your-user>/markflare.git
 git push -u origin main
 ```
 
-#### 1.2. Create the database
+#### 1.2. Create the database and the bucket
+
+Markflare needs two storage pieces before it can run. Create both now — neither one
+existed until a few minutes ago, and both have to exist before the app works.
+
+**The database (D1) — this is where your notes live.**
+
+Your pages, blocks, share links and upload metadata. This is a SQLite database, which is
+why a D1 row tops out at 2 MB — relevant in a moment.
 
 **Workers & Pages → D1 SQL databases → Create database**
 
 - Name: `markflare-db`
 
-#### 1.3. Create the file bucket
+**The file bucket (R2) — this is where your images and attachments live.**
+
+This one is not optional and not a detail. A D1 row can't hold more than 2 MB, and storing
+bytes as base64 inflates them by a further ~33%, so keeping uploads in the database caps
+you at a ~1.5 MB image. Putting them in R2 is what lifts that ceiling to **25 MB**, and it
+keeps the database for text, which is what a database is good at.
 
 **R2 → Overview → Create bucket**
 
 - Bucket name: `markflare-files`
 
-R2 asks for a card on the free plan the first time. Leave the bucket **private** — files
-are served through the app, and a public bucket would expose them directly. More detail in
-[File storage (R2)](#file-storage-r2).
+R2 will ask you to add a card on the free plan the first time — the free tier gives you
+10 GB of storage, 1M writes and 10M reads a month, with no charge for bandwidth, which is
+far more than a personal workspace uses.
 
-#### 1.4. Create the tables
+> **Leave the bucket private.** Don't turn on the public `r2.dev` domain. Files are served
+> through the app, and a public bucket would expose them directly, bypassing it.
+>
+> The name doesn't actually matter, as long as you bind it as `BUCKET` in step 1.5.
+> `markflare-files` is just the default so these steps are copy-pasteable.
+
+More on why this is split across two services, and what to do if you're upgrading from a
+version that kept uploads in the database, in [File storage (R2)](#file-storage-r2).
+
+#### 1.3. Create the tables
 
 Open `markflare-db` → **Console** tab. Paste each of the five blocks below and hit
 **Execute**, in order.
@@ -268,7 +290,7 @@ CREATE INDEX IF NOT EXISTS idx_api_tokens_id ON api_tokens(id);
 
 </details>
 
-#### 1.5. Create the Pages project
+#### 1.4. Create the Pages project
 
 **Workers & Pages → Create application → Pages**
 
@@ -287,7 +309,7 @@ not filled in for you:
 
 Cloudflare detects `functions/api/[[route]].ts` automatically and deploys it as your API.
 
-#### 1.6. Wire up the bindings and secrets
+#### 1.5. Wire up the bindings and secrets
 
 In **Settings → Functions**:
 
@@ -317,7 +339,7 @@ openssl rand -hex 32
 > If login fails with `503` right after adding them, trigger a redeploy — push an empty
 > commit, or click **Retry deployment** on the latest build.
 
-#### 1.7. Done
+#### 1.6. Done
 
 Your site is live at `https://markflare.pages.dev`. Sign in with the `AUTH_USERNAME` and
 `AUTH_PASSWORD` you just set.
@@ -362,13 +384,16 @@ pnpm install
 pnpm run build
 ```
 
-#### 3.2. Create the database, and note its ID
+#### 3.2. Create the database and the bucket
 
-**Workers & Pages → D1 SQL databases → Create database**, named `markflare-db`. Open it and
-copy the **Database ID** (a UUID) — you need it in the next step.
+Same two storage pieces as [step 1.2](#12-create-the-database-and-the-bucket) — and both
+still get created from the dashboard, since neither can be created from the CLI.
 
-Create the R2 bucket from the dashboard too: **R2 → Overview → Create bucket**, named
-`markflare-files`.
+**The database (D1)** — **Workers & Pages → D1 SQL databases → Create database**, named
+`markflare-db`. Open it and copy the **Database ID** (a UUID) — you need it in step 3.3.
+
+**The file bucket (R2)** — **R2 → Overview → Create bucket**, named `markflare-files`.
+Leave it private; there's no reason to expose it here either.
 
 #### 3.3. Create a local `wrangler.toml`
 
@@ -454,37 +479,27 @@ pnpm run dev:web      # frontend only
 
 ## File storage (R2)
 
+> Creating the bucket and binding it are covered in
+> [step 1.2](#12-create-the-database-and-the-bucket). This section is the reasoning behind
+> that split, and what to do if you're coming from an older version.
+
 Images and attachments never go into the database. In production they land in an R2 bucket;
-in local dev they land in `uploads/`. The `files` table keeps metadata only, plus a
-`storage` column recording which backend owns the bytes. Uploads are capped at **25 MB**.
+in local dev they land in `uploads/`. The `files` table keeps metadata only, plus a `storage`
+column recording which backend owns the bytes. Uploads are capped at **25 MB**.
 
-R2 is what makes that cap possible: a D1 row tops out at 2 MB, and base64 inflates by a
-further ~33%.
+**Why not just use the database?** A D1 row tops out at 2 MB, and base64 inflates bytes by
+a further ~33%, so the ceiling would be roughly a 1.5 MB image — and every note would
+compete with those bytes for the same 500 MB on the free plan. Splitting them keeps D1 for
+text, which is what it's good at, and lets the file bucket scale on its own.
 
-The free tier covers a personal workspace comfortably — 10 GB-month of storage, 1M writes,
-10M reads per month, and no egress charge. Past that it's $0.015/GB-month.
+**What it costs.** The free tier gives 10 GB-month of storage, 1M writes and 10M reads per
+month, and bandwidth is never charged. Past that it's $0.015/GB-month, so a personal
+workspace doesn't realistically leave $0.
 
-### The two steps
-
-**1. Create the bucket** — **R2 → Overview → Create bucket**, named `markflare-files`.
-
-The name doesn't actually matter, as long as you bind it under the variable `BUCKET` in the
-next step. `markflare-files` is simply the default so the instructions are copy-pasteable.
-
-> Leave it private. Don't turn on the public `r2.dev` domain — files are served through
-> `/api/files/:id`, and a public bucket would bypass the app entirely.
-
-**2. Bind it** — **Workers & Pages → your project → Settings → Functions → R2 bucket
-bindings → Add**
-
-| Field | Value |
-|---|---|
-| Variable name | `BUCKET` |
-| R2 bucket | `markflare-files` |
-
-The variable name has to be exactly `BUCKET`; that's what the Worker reads. Without it,
-uploads return `503`. There is deliberately **no** fallback that quietly writes into D1
-instead — a loud failure is better than a database quietly filling up.
+**One rule worth knowing:** the bucket must stay private, and uploads go through
+`/api/files/:id`. That route is intentionally unauthenticated so images inside public share
+pages can load, which means the R2 bucket is the only thing standing between your uploads
+and the open internet. Don't turn on `r2.dev`.
 
 ### Already deployed with an older version?
 
@@ -534,7 +549,7 @@ pnpm run db:migrate:prod     # wrangler d1 migrations apply markflare-db --remot
 ```
 
 To apply them by hand in the dashboard, use the five blocks in
-[step 1.4](#14-create-the-tables).
+[step 1.3](#13-create-the-tables).
 
 > **D1 caveat** — SQLite has no `ADD COLUMN IF NOT EXISTS`, and D1 has no `DROP COLUMN`.
 > Any future migration that changes a table's shape has to use the rebuild pattern: create
@@ -610,7 +625,7 @@ Cloudflare dashboard, under **Settings → Variables and secrets**.
 ## Model Context Protocol (MCP)
 
 Markflare ships an MCP server, so AI assistants can read and write your workspace.
-Requires the `api_tokens` table ([block 5](#14-create-the-tables)).
+Requires the `api_tokens` table ([block 5](#13-create-the-tables)).
 
 Generate a token from **Account & Settings → API / MCP Token** in the app, then:
 
