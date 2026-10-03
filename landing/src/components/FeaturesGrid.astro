@@ -1,4 +1,6 @@
 ---
+import Icon from './Icon.astro';
+
 interface Props {
   lang?: 'es' | 'en';
 }
@@ -12,56 +14,56 @@ const features = isEs
         tag: 'EDITOR CORE',
         title: 'Bloques dinámicos & Menú Slash',
         description: 'Escribe a la velocidad del pensamiento. Párrafos, encabezados H1-H3, listas de tareas, bloques de citas y desplegables sin fricción.',
-        icon: '✍️',
+        icon: 'edit',
         highlight: 'Slash menu instantáneo con "/"',
       },
       {
         tag: 'JERARQUÍA',
         title: 'Páginas y Subpáginas Infinitas',
         description: 'Organiza tus proyectos en un árbol jerárquico anidado sin restricciones de profundidad. Eliminación en cascada segura en base de datos.',
-        icon: '📁',
+        icon: 'folder',
         highlight: 'ON DELETE CASCADE en SQLite',
       },
       {
         tag: 'CIENCIA & DEV',
         title: 'Fórmulas KaTeX & Código Resaltado',
         description: 'Renderizado instantáneo de expresiones matemáticas en LaTeX y bloques de código con soporte multilingüe y botón de copia directa.',
-        icon: '📐',
+        icon: 'sigma',
         highlight: 'KaTeX v0.18 + Syntax Highlighting',
       },
       {
         tag: 'DISTRIBUCIÓN',
         title: 'Enlaces Públicos con Tokens de 128-bit',
         description: 'Comparte cualquier nota o rama de páginas mediante un token criptográfico único. Revocación en un clic y aislamiento del resto del espacio.',
-        icon: '🔗',
+        icon: 'link',
         highlight: 'Tokens no predecibles con revocación',
       },
       {
         tag: 'ALMACENAMIENTO',
         title: 'Archivos y Medios Integrados',
         description: 'Sube imágenes y adjuntos de hasta 25 MB. Los bytes van a un bucket R2 privado y en D1 queda solo la metadata, así la base nunca se llena de blobs.',
-        icon: '🖼️',
+        icon: 'image',
         highlight: 'Límite de 25 MB por archivo',
       },
       {
         tag: 'PORTABILIDAD',
         title: 'Importación y Exportación Markdown',
         description: 'Exporta tus páginas en formato Markdown limpio en un clic o crea nuevas páginas importando archivos .md existentes. Tus notas nunca quedan atrapadas.',
-        icon: '📥',
+        icon: 'download',
         highlight: 'Cero vendor lock-in',
       },
       {
         tag: 'GLOBALIZACIÓN',
         title: 'Bilingüe Nativo (Español / Inglés)',
         description: 'Toda la interfaz está disponible en español e inglés sin cargar frameworks de traducción pesados. Se conmuta instantáneamente.',
-        icon: '🌐',
+        icon: 'globe',
         highlight: 'EN / ES instantáneo',
       },
       {
         tag: 'DISEÑO',
         title: 'Doble Tema & Tinte de Íconos',
         description: 'Modo oscuro afilado (#191919) y modo claro limpio con soporte para personalizar el tinte de íconos de forma independiente en cada tema.',
-        icon: '🎨',
+        icon: 'palette',
         highlight: 'Tokens de diseño precisos',
       },
     ]
@@ -70,56 +72,56 @@ const features = isEs
         tag: 'EDITOR CORE',
         title: 'Dynamic Blocks & Slash Menu',
         description: 'Write at the speed of thought. Paragraphs, H1-H3 headings, to-do checkboxes, callouts, and quote blocks without friction.',
-        icon: '✍️',
+        icon: 'edit',
         highlight: 'Instant slash menu with "/"',
       },
       {
         tag: 'HIERARCHY',
         title: 'Infinite Pages & Subpages',
         description: 'Organize your knowledge in an infinitely nested page tree. Built with database-level cascade deletion for clean maintenance.',
-        icon: '📁',
+        icon: 'folder',
         highlight: 'ON DELETE CASCADE in SQLite',
       },
       {
         tag: 'SCIENCE & CODE',
         title: 'KaTeX Math & Syntax Highlighted Code',
         description: 'Blazing fast LaTeX math typesetting combined with multi-language code snippets featuring one-click copy buttons.',
-        icon: '📐',
+        icon: 'sigma',
         highlight: 'KaTeX v0.18 + Syntax Highlighting',
       },
       {
         tag: 'SHARING',
         title: 'Public Links with 128-bit Tokens',
         description: 'Share any single note or subpage tree through a secure 128-bit token. Revoke access instantly with scoped visitor permissions.',
-        icon: '🔗',
+        icon: 'link',
         highlight: 'Cryptographic share tokens',
       },
       {
         tag: 'STORAGE',
         title: 'Integrated File & Image Uploads',
         description: 'Upload images and files up to 25 MB. The bytes go to a private R2 bucket and only the metadata stays in D1, so the database never fills up with blobs.',
-        icon: '🖼️',
+        icon: 'image',
         highlight: 'Up to 25 MB per file',
       },
       {
         tag: 'PORTABILITY',
         title: 'Markdown Import & Export',
         description: 'Export any page to pure Markdown with one click or create pages by importing .md files. Your notes are always yours.',
-        icon: '📥',
+        icon: 'download',
         highlight: 'Zero vendor lock-in',
       },
       {
         tag: 'LOCALIZATION',
         title: 'Native Bilingual UI (EN / ES)',
         description: 'The entire interface is crafted in both English and Spanish without heavy external libraries. Switch locales with zero reload.',
-        icon: '🌐',
+        icon: 'globe',
         highlight: 'Native EN / ES support',
       },
       {
         tag: 'AESTHETICS',
         title: 'Dual Theme & Icon Color Tinting',
         description: 'Sharp dark mode (#191919) and crisp light mode with independent icon color personalization for each theme.',
-        icon: '🎨',
+        icon: 'palette',
         highlight: 'Precision design tokens',
       },
     ];
@@ -147,7 +149,7 @@ const features = isEs
         features.map((feat) => (
           <article class="feature-card">
             <div class="card-top">
-              <span class="feature-icon">{feat.icon}</span>
+              <span class="feature-icon"><Icon name={feat.icon} size={24} /></span>
               <span class="feature-tag">{feat.tag}</span>
             </div>
             <h3 class="feature-title">{feat.title}</h3>
@@ -212,7 +214,8 @@ const features = isEs
   }
 
   .feature-icon {
-    font-size: 24px;
+    display: flex;
+    color: var(--text-secondary);
   }
 
   .feature-tag {

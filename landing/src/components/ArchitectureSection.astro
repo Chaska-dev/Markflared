@@ -1,4 +1,6 @@
 ---
+import Icon from './Icon.astro';
+
 interface Props {
   lang?: 'es' | 'en';
 }
@@ -157,7 +159,7 @@ const isEs = lang === 'es';
     <!-- Security & Architecture Guarantee Cards -->
     <div class="security-guarantees">
       <div class="guarantee-box">
-        <div class="guarantee-icon">🔒</div>
+        <Icon name="lock" class="guarantee-icon" size={22} />
         <div class="guarantee-content">
           <h4>{isEs ? 'Seguridad Monousuario' : 'Single-User Security'}</h4>
           <p>
@@ -169,7 +171,7 @@ const isEs = lang === 'es';
       </div>
 
       <div class="guarantee-box">
-        <div class="guarantee-icon">🛡️</div>
+        <Icon name="shield" class="guarantee-icon" size={22} />
         <div class="guarantee-content">
           <h4>{isEs ? 'Protección contra Fuerza Bruta' : 'Brute Force Protection'}</h4>
           <p>
@@ -181,7 +183,7 @@ const isEs = lang === 'es';
       </div>
 
       <div class="guarantee-box">
-        <div class="guarantee-icon">⚡</div>
+        <Icon name="zap" class="guarantee-icon" size={22} />
         <div class="guarantee-content">
           <h4>{isEs ? 'Integridad Relacional Forzada' : 'Enforced Relational Integrity'}</h4>
           <p>
@@ -222,13 +224,9 @@ const isEs = lang === 'es';
     flex-direction: column;
   }
 
-  .arch-card.prod {
-    border-top: 3px solid var(--accent);
-  }
-
-  .arch-card.local {
-    border-top: 3px solid var(--text-secondary);
-  }
+  /* No coloured top border here. It marked "producción" with orange while the
+     neighbouring local card got grey, which read as decoration and made the
+     pair shout. The card already says which one it is. */
 
   .arch-card-header {
     display: flex;

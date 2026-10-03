@@ -1,5 +1,6 @@
 ---
 import InteractiveEditorPreview from './InteractiveEditorPreview.astro';
+import Icon from './Icon.astro';
 
 interface Props {
   lang?: 'es' | 'en';
@@ -84,28 +85,28 @@ const isEs = lang === 'es';
     <!-- Value Highlights / Architecture Pillars -->
     <div class="hero-pillars">
       <div class="pillar-item">
-        <span class="pillar-icon">⚡</span>
+        <Icon name="zap" class="pillar-icon" size={18} />
         <div class="pillar-content">
           <strong>Cloudflare Pages + D1</strong>
           <span>{isEs ? 'SQLite serverless en el edge' : 'Serverless edge SQLite'}</span>
         </div>
       </div>
       <div class="pillar-item">
-        <span class="pillar-icon">💻</span>
+        <Icon name="monitor" class="pillar-icon" size={18} />
         <div class="pillar-content">
           <strong>{isEs ? 'Desarrollo Local Instantáneo' : 'Instant Local Dev'}</strong>
           <span>Express 5 + better-sqlite3</span>
         </div>
       </div>
       <div class="pillar-item">
-        <span class="pillar-icon">🔒</span>
+        <Icon name="lock" class="pillar-icon" size={18} />
         <div class="pillar-content">
           <strong>{isEs ? 'Seguridad Monousuario' : 'Single-User Security'}</strong>
           <span>HMAC-SHA256 & Rate Limiting</span>
         </div>
       </div>
       <div class="pillar-item">
-        <span class="pillar-icon">🌍</span>
+        <Icon name="globe" class="pillar-icon" size={18} />
         <div class="pillar-content">
           <strong>{isEs ? 'UI Bilingüe & Tema Dual' : 'Bilingual & Dual Theme'}</strong>
           <span>Español / English nativo</span>
@@ -292,8 +293,13 @@ const isEs = lang === 'es';
   }
 
   .pillar-icon {
-    font-size: 18px;
     flex-shrink: 0;
+    color: var(--text-secondary);
+    transition: color 0.15s;
+  }
+
+  .pillar-item:hover .pillar-icon {
+    color: var(--text-primary);
   }
 
   .pillar-content {

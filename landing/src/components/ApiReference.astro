@@ -1,4 +1,6 @@
 ---
+import Icon from './Icon.astro';
+
 interface Props {
   lang?: 'es' | 'en';
 }
@@ -42,8 +44,8 @@ const endpoints = [
       </h2>
       <p class="section-desc">
         {isEs
-          ? 'Todas las rutas están montadas bajo /api. Las rutas marcadas con 🔒 requieren el header Bearer token obtenido mediante POST /api/auth/login.'
-          : 'All routes are mounted under /api. Endpoints with 🔒 require an Authorization: Bearer <token> header issued from POST /api/auth/login.'}
+          ? 'Todas las rutas están montadas bajo /api. Las que muestran un candado requieren el header Bearer token obtenido mediante POST /api/auth/login.'
+          : 'All routes are mounted under /api. The ones marked with a padlock require an Authorization: Bearer <token> header issued from POST /api/auth/login.'}
       </p>
     </div>
 
@@ -87,7 +89,7 @@ const endpoints = [
                   <td>
                     {ep.auth ? (
                       <span class="auth-pill locked" title="Requiere Bearer token">
-                        🔒 <span>Bearer</span>
+                        <Icon name="lock" size={12} /> <span>Bearer</span>
                       </span>
                     ) : (
                       <span class="auth-pill public" title="Acceso público">
