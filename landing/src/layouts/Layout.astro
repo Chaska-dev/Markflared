@@ -34,7 +34,7 @@ const {
     <script is:inline>
       (function () {
         try {
-          const savedTheme = localStorage.getItem('markflared_theme');
+          const savedTheme = localStorage.getItem('markflare_theme');
           if (savedTheme === 'light' || savedTheme === 'dark') {
             document.documentElement.setAttribute('data-theme', savedTheme);
           } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
@@ -62,7 +62,7 @@ const {
             const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
             document.documentElement.setAttribute('data-theme', nextTheme);
             try {
-              localStorage.setItem('markflared_theme', nextTheme);
+              localStorage.setItem('markflare_theme', nextTheme);
             } catch (e) {
               console.error(e);
             }

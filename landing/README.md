@@ -1,12 +1,12 @@
-# Markflared Landing Page (Astro)
+# Markflare Landing Page (Astro)
 
-Esta es la landing page oficial de **Markflared**, construida con [Astro](https://astro.build) siguiendo la regla de diseño inspirada en la skill `frontend-design` de Claude Code y la paleta de colores nativa de Markflared (`#F38020`, `#191919`, `#202020`).
+Esta es la landing page oficial de **Markflare**, construida con [Astro](https://astro.build) siguiendo la regla de diseño inspirada en la skill `frontend-design` de Claude Code y la paleta de colores nativa de Markflare (`#F38020`, `#191919`, `#202020`).
 
 ---
 
 ## 🎨 Características de Diseño
 
-- **Alineación con Markflared**: Misma paleta de colores CSS, modo oscuro (`#191919`) y modo claro (`#ffffff`), tipografía del sistema y fuentes monospace para código/terminal.
+- **Alineación con Markflare**: Misma paleta de colores CSS, modo oscuro (`#191919`) y modo claro (`#ffffff`), tipografía del sistema y fuentes monospace para código/terminal.
 - **Showcase Interactivo en Vivo**: Simulador del editor de bloques con checkbox funcionales, bloque de código multilenguaje, fórmulas KaTeX y menú de comando slash (`/`).
 - **Cobertura total del README**:
   1. Propuesta de valor, badges y enlaces directos de descarga y repositorio.
@@ -16,7 +16,7 @@ Esta es la landing page oficial de **Markflared**, construida con [Astro](https:
   5. Los 4 bloques SQL de migraciones con botón de copia rápida para la consola de Cloudflare D1.
   6. Tabla completa de la API REST (/api/...) con filtrado interactivo por categorías.
   7. Tabla de configuración de variables de entorno (`AUTH_USERNAME`, `AUTH_PASSWORD`, `AUTH_SECRET`) y aviso sobre Pages.
-  8. CTA final con descarga directa de ZIP (`https://github.com/Chaska-dev/Markflared/archive/refs/heads/main.zip`) y redirección al repositorio GitHub (`https://github.com/Chaska-dev/Markflared`).
+  8. CTA final con descarga directa de ZIP (`https://github.com/Chaska-dev/Markflare/archive/refs/heads/main.zip`) y redirección al repositorio GitHub (`https://github.com/Chaska-dev/Markflare`).
 - **Soporte Bilingüe Completo**:
   - Español: `/`
   - English: `/en`
@@ -50,5 +50,5 @@ pnpm run preview
 
 Este directorio `landing/` es completamente autónomo:
 - Posee su propio `package.json` y `node_modules/`.
-- No modifica ni contamina las dependencias del proyecto raíz `Markflared` (React 18 + Vite 5 + Cloudflare Functions).
+- No modifica ni contamina las dependencias del proyecto raíz `Markflare` (React 18 + Vite 5 + Cloudflare Functions).
 - Puede desplegarse en Cloudflare Pages, Vercel, Netlify o GitHub Pages apuntando a la subcarpeta `landing/`.

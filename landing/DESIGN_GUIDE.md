@@ -1,11 +1,11 @@
 ---
-description: Regla de diseño y desarrollo frontend para la Landing Page de Markflared con Astro, basada en la skill frontend-design de Claude y los tokens de diseño de Markflared.
+description: Regla de diseño y desarrollo frontend para la Landing Page de Markflare con Astro, basada en la skill frontend-design de Claude y los tokens de diseño de Markflare.
 globs: ["landing/**", "src/**"]
 ---
 
-# Regla de Diseño y Desarrollo: Landing Page Markflared (Astro)
+# Regla de Diseño y Desarrollo: Landing Page Markflare (Astro)
 
-Esta regla adapta la filosofía de diseño distintivo e intencional de la skill `frontend-design` de Claude Code específicamente para **Markflared**: un espacio de trabajo de notas por bloques auto-hospedado sobre Cloudflare Pages + Cloudflare D1 (SQLite serverless en el edge).
+Esta regla adapta la filosofía de diseño distintivo e intencional de la skill `frontend-design` de Claude Code específicamente para **Markflare**: un espacio de trabajo de notas por bloques auto-hospedado sobre Cloudflare Pages + Cloudflare D1 (SQLite serverless en el edge).
 
 ---
 
@@ -29,7 +29,7 @@ Siguiendo las directrices estrictas de Claude Code `frontend-design`:
 
 ## 2. Sistema de Tokens de Diseño
 
-La landing page debe sincronizar al 100% la paleta de colores oficial de Markflared (`src/index.css`):
+La landing page debe sincronizar al 100% la paleta de colores oficial de Markflare (`src/index.css`):
 
 ### 2.1 Paleta Modo Oscuro (Predeterminado)
 - **Fondo primario (`--bg-primary`)**: `#191919`
@@ -69,10 +69,10 @@ La landing page debe sincronizar al 100% la paleta de colores oficial de Markfla
 
 ## 3. Estructura y Secciones Requeridas (README Coverage)
 
-La landing page debe cubrir rigurosamente todas las características del README de Markflared:
+La landing page debe cubrir rigurosamente todas las características del README de Markflare:
 
 1. **Barra de Navegación / Header**:
-   - Logo oficial de Markflared (SVG fiel al del repositorio) + Versión `v1.0.0`.
+   - Logo oficial de Markflare (SVG fiel al del repositorio) + Versión `v1.0.0`.
    - Enlaces de salto: Características, Arquitectura, 5 Métodos de Despliegue, Migraciones, API.
    - Switcher de tema (Dark / Light).
    - Selector de idioma (EN / ES).
@@ -82,10 +82,10 @@ La landing page debe cubrir rigurosamente todas las características del README 
    - Título sobrio y de alto impacto sobre el valor central: "Tus notas por bloques en el edge de Cloudflare".
    - Subtítulo explicativo sin relleno: "Auto-hospedado, privado, instantáneo. Páginas infinitas, fórmulas KaTeX, código con resaltado y soporte bilingüe sobre Cloudflare Pages + D1."
    - Acciones principales:
-     * Botón primario de descarga de código: Enlace directo al ZIP de GitHub (`https://github.com/Chaska-dev/Markflared/archive/refs/heads/main.zip`).
-     * Botón secundario: Enlace al repositorio GitHub (`https://github.com/Chaska-dev/Markflared`) con contador de estrellas/forks.
-     * Comando rápido de clonación con botón interactivo de copiar al portapapeles: `git clone https://github.com/Chaska-dev/Markflared.git`.
-   - **Showcase Interactivo en Vivo**: Un simulador interactivo del editor de bloques de Markflared que permite probar:
+     * Botón primario de descarga de código: Enlace directo al ZIP de GitHub (`https://github.com/Chaska-dev/Markflare/archive/refs/heads/main.zip`).
+     * Botón secundario: Enlace al repositorio GitHub (`https://github.com/Chaska-dev/Markflare`) con contador de estrellas/forks.
+     * Comando rápido de clonación con botón interactivo de copiar al portapapeles: `git clone https://github.com/Chaska-dev/Markflare.git`.
+   - **Showcase Interactivo en Vivo**: Un simulador interactivo del editor de bloques de Markflare que permite probar:
      * Menú flotante de comando slash (`/`).
      * Bloques interactivos: Tarea (checkbox funcional), Bloque de código con pestaña de lenguaje, Ecuación KaTeX, Cita/Callout.
      * Alternador de vista previa de árbol de páginas (sidebar).
@@ -127,16 +127,16 @@ La landing page debe cubrir rigurosamente todas las características del README 
    - Tabla de `AUTH_USERNAME`, `AUTH_PASSWORD`, `AUTH_SECRET` con instrucción para generarlo con `openssl rand -hex 32`.
 
 9. **Footer & Call to Action Final**:
-   - Recordatorio de licencia MIT y enlaces oficiales al repositorio de GitHub: `https://github.com/Chaska-dev/Markflared`.
+   - Recordatorio de licencia MIT y enlaces oficiales al repositorio de GitHub: `https://github.com/Chaska-dev/Markflare`.
    - Enlace directo a la descarga del código fuente en formato `.zip`.
 
 ---
 
 ## 4. Reglas Técnicas de Implementación en Astro
 
-1. **Ubicación Aislada**: El proyecto de Astro debe residir exclusivamente dentro de la subcarpeta `landing/` para mantener limpio el repositorio raíz de Markflared.
+1. **Ubicación Aislada**: El proyecto de Astro debe residir exclusivamente dentro de la subcarpeta `landing/` para mantener limpio el repositorio raíz de Markflare.
 2. **Sin dependencias pesadas innecesarias**: Aprovechar los componentes `.astro` para renderizado estático rápido, con interactividad en islas de cliente (`client:load` o vanilla TypeScript/Web Components ligeros) para tabs, theme toggle y copy buttons.
-3. **Estilos**: Usar CSS moderno con variables CSS coincidentes con Markflared para cambios de tema instantáneos sin parpadeo (FOUC).
+3. **Estilos**: Usar CSS moderno con variables CSS coincidentes con Markflare para cambios de tema instantáneos sin parpadeo (FOUC).
 4. **Accesibilidad y Rendimiento**:
    - Semántica HTML rigurosa (`<header>`, `<main>`, `<section>`, `<article>`, `<footer>`).
    - Soporte total de teclado (focus visible) y contraste WCAG AAA.
