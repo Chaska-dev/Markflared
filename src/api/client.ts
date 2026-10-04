@@ -53,6 +53,17 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
+    createToken: (name?: string, expiresInDays?: number) =>
+      request<{ id: string; name: string; token: string; expiresAt: number; createdAt: string }>('/auth/token', {
+        method: 'POST',
+        body: JSON.stringify({ name, expiresInDays }),
+      }),
+    listTokens: () =>
+      request<{ tokens: Array<{ id: string; name: string; tokenPreview: string; createdAt: string; expiresAt: number }> }>('/auth/tokens'),
+    deleteToken: (id: string) =>
+      request<{ success: boolean; id: string }>(`/auth/tokens/${id}`, {
+        method: 'DELETE',
+      }),
   },
   files: {
     upload: async (file: File, pageId?: string): Promise<{ file: FileInfo }> => {

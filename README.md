@@ -1,64 +1,119 @@
 <div align="center">
   <img src="public/logo.svg" alt="Markflare logo" width="220" />
+  <h1>Markflare</h1>
 </div>
 
-A self-hosted, block-based note-taking workspace on **Cloudflare Pages + D1**.
-Pages, subpages, todos, code blocks, tables, public share links, file uploads and bilingual UI (EN/ES). Runs on Cloudflare in production, Express + SQLite for local dev.
+<div align="center">
+
+A self-hosted, block-based note-taking workspace that runs entirely on **Cloudflare**.
+
+</div>
+
+Pages with nested subpages, to-do lists, code blocks, tables, public share links, image
+and file uploads, and a bilingual interface (English / Spanish).
+
+---
+
+## What you get
+
+- **Block editor** — type `/` for a command menu: headings, lists, to-dos, code, math,
+  tables, quotes, callouts, images, files, subpages.
+- **Nested pages** — a page can hold subpages, and deleting a page cascades to them.
+- **Drag & drop** — move blocks around, nest them by dropping in the middle, and drop an
+  image or document straight into the page to upload it.
+- **Public share links** — one click to publish a page (and its subpages) read-only.
+- **Markdown in and out** — import a `.md` file, export any page back to Markdown.
+- **File storage in R2** — uploads up to 25 MB, never stored in the database.
+- **MCP server** — connect AI assistants (Claude Desktop, Cursor, Zed) to your workspace.
+- **Bilingual UI** — English and Spanish, switchable at runtime.
+
+## Contents
+
+| # | Section | What it covers |
+|---|---------|----------------|
+| 1 | [Stack](#stack) | What it's built with |
+| 2 | [The three Cloudflare pieces](#the-three-cloudflare-pieces) | What you're actually creating |
+| 3 | [Deploy](#deploy) | Three methods — pick one |
+| 4 | [Run locally](#run-locally) | Develop on your machine |
+| 5 | [File storage (R2)](#file-storage-r2) | Why uploads aren't in the database |
+| 6 | [Database schema](#database-schema) | Every table, as copy-paste SQL |
+| 7 | [API](#api) | All HTTP routes |
+| 8 | [Configuration](#configuration) | Environment variables |
+| 9 | [Model Context Protocol](#model-context-protocol-mcp) | AI assistant integration |
+| 10 | [Notes](#notes) | Design decisions worth knowing |
 
 ---
 
 ## Stack
 
-- **Frontend** — React 18 + Vite 5 + TypeScript
-- **Backend** — Cloudflare Pages Functions (Hono) · Express 5 (local dev)
-- **DB** — Cloudflare D1 (prod) · `better-sqlite3` (local)
+| Layer | Production | Local dev |
+|---|---|---|
+| **Frontend** | React 18 + Vite 5 + TypeScript | same |
+| **Backend** | Cloudflare Pages Functions (Hono) | Express 5 |
+| **Database** | Cloudflare D1 | `better-sqlite3` (SQLite file) |
+| **File storage** | Cloudflare R2 | `uploads/` on disk |
+| **AI / MCP** | Official Model Context Protocol server (`@modelcontextprotocol/sdk`) | same |
 
-## Run locally
+The local server is a functional replica: same routes, same request and response shapes,
+so the frontend can't tell the difference.
 
-```bash
-git clone https://github.com/<your-user>/markflare.git
-cd markflare
-pnpm install
-cp .env.example .dev.vars   # set AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET
-pnpm run db:migrate:all     # creates data/markflare.db with the schema
-pnpm run dev                # Express on :3000 + Vite on :5173
-```
+---
 
-Open <http://localhost:5173> and sign in with the credentials in `.dev.vars`.
+## The three Cloudflare pieces
+
+If this is your first time deploying to Cloudflare, this section is the one that matters.
+You create three things, and they each have a job:
+
+| What | Cloudflare service | Job in plain language | Created in |
+|---|---|---|---|
+| The website | **Pages** | Serves the app and runs the API. It's the "web host". | [step 1.4](#14-create-the-pages-project) |
+| Your notes | **D1** | A SQLite database. Holds pages, blocks, and share links. | [step 1.2](#12-create-the-database-and-the-bucket) |
+| Your images | **R2** | Object storage, like a private folder of files. | [step 1.2](#12-create-the-database-and-the-bucket) |
+
+Two of them are "bindings": you create them separately, then tell Pages "this variable is
+that database". The names are fixed and the code expects them:
+
+| Binding variable | Points to | If it's missing |
+|---|---|---|
+| `DB` | your D1 database | nothing loads |
+| `BUCKET` | your R2 bucket | uploads return `503` |
 
 ---
 
 ## Deploy
 
-Markflare can be deployed in four different ways. Pick the one that matches your workflow.
+Three methods. All of them end up with the same thing running on
+`https://markflare.pages.dev`.
 
-> **Note** — there's no `wrangler.toml` in this repo on purpose. Cloudflare Pages will manage everything from the dashboard: build command, build output directory, D1 binding, and `AUTH_*` secrets. (Putting any of those in `wrangler.toml` locks the dashboard's binding UI.) If you want to use Method 4 (terminal `wrangler`), create a local `wrangler.toml` for that workflow — see Method 4 for the snippet.
-
-| | Local dev | Dashboard (no terminal) | Terminal (`wrangler`) |
+| | **1. Dashboard** ⭐ | **2. Local** | **3. Terminal** |
 |---|---|---|---|
-| **Method** | 1. Local development | 2. Clone repo · 3. Download ZIP · 5. Git-connected | 4. `wrangler` CLI |
-| **Build** | `pnpm run dev` | local (2/3) or auto on Pages (5) | `pnpm run deploy` |
-| **Migrations** | `pnpm run db:migrate:all` | paste each block in the D1 Console | `pnpm run db:migrate:prod` |
-| **D1 binding** | local SQLite file | set in the Pages UI | set in local `wrangler.toml` |
-| **AUTH secrets** | `.dev.vars` locally | set in the Pages UI | set in the Pages UI |
+| **Who it's for** | most people | people developing the app | people who script everything |
+| **Needs a terminal?** | only to run `pnpm install` + build | yes | yes |
+| **Who builds the app** | you, or Pages on every push | you | you |
+| **Schema applied by** | pasting SQL in a web console | `pnpm run db:migrate:all` | `pnpm run db:migrate:prod` |
+| **Bindings set in** | the Pages UI | not needed | local `wrangler.toml` |
+| **Redeploys** | drag `dist/` again, or push to Git | — | `pnpm run deploy` |
 
-1. [Local development](#1-local-development) — runs on your machine, no deploy needed
-2. [Dashboard — clone the repo](#2-dashboard--clone-the-repo) — recommended for developers
-3. [Dashboard — download as ZIP](#3-dashboard--download-as-zip) — no git required
-4. [Terminal — `wrangler` CLI](#4-terminal--wrangler-cli) — script everything
-5. [Dashboard — Git-connected deploy](#5-dashboard--git-connected-deploy) — push to GitHub, Pages builds for you
+> **Why there's no `wrangler.toml` in the repo** — on purpose. If that file exists,
+> Cloudflare Pages stops letting you manage bindings and secrets from the dashboard UI, and
+> you'd have to keep the file in sync. Methods 1 and 2 never need it. Method 3 creates one
+> locally; see below.
 
-### 1. Local development
-
-Already covered above (`pnpm run dev`). The local Express server talks to a SQLite file at `data/markflare.db`, so you don't need a D1 database at all.
+**Jump to:** [1. Dashboard](#1-cloudflare-dashboard-recommended) ·
+[2. Local](#2-local-only-no-deploy) · [3. Terminal](#3-terminal-wrangler-cli)
 
 ---
 
-### 2. Dashboard — clone the repo
+### 1. Cloudflare dashboard (recommended)
 
-This is the cleanest path: clone the repo with `git`, build locally, and upload `dist/`. No `wrangler` CLI required.
+> **Time:** about 15 minutes. **Prerequisites:** a Cloudflare account, and `node` + `pnpm`
+> on your machine.
 
-#### 2.1. Clone and build
+#### 1.1. Get the code and build it
+
+Pick whichever fits you:
+
+**Variant A — build it yourself, upload the folder**
 
 ```bash
 git clone https://github.com/<your-user>/markflare.git
@@ -67,166 +122,69 @@ pnpm install
 pnpm run build
 ```
 
-This produces `dist/`. Cloning (instead of downloading a ZIP) keeps your local copy a clean snapshot of the source — you'll always rebuild from the same code without surprises.
+This produces a `dist/` folder. You don't have `git`? Grab the source from
+**Code → Download ZIP**, extract it, and run the same `pnpm install && pnpm run build`.
 
-#### 2.2. Create the D1 database
+**Variant B — connect to Git and let Pages build every push**
 
-**Workers & Pages → D1 SQL databases → Create database**
-
-- Name: `markflare-db`
-
-#### 2.3. Apply the migrations
-
-Open the D1 database page → **Console** tab. Paste each block below and hit **Execute** in order.
-
-**Block 1 — `0001_initial.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS pages (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL DEFAULT 'Untitled',
-  icon TEXT NOT NULL DEFAULT '📄',
-  parent_id TEXT,
-  position INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (parent_id) REFERENCES pages(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS blocks (
-  id TEXT PRIMARY KEY,
-  page_id TEXT NOT NULL,
-  type TEXT NOT NULL DEFAULT 'paragraph',
-  content TEXT NOT NULL DEFAULT '',
-  checked INTEGER NOT NULL DEFAULT 0,
-  language TEXT NOT NULL DEFAULT '',
-  position INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  parent_id TEXT,
-  collapsed INTEGER NOT NULL DEFAULT 0,
-  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id);
-CREATE INDEX IF NOT EXISTS idx_blocks_page ON blocks(page_id);
-CREATE INDEX IF NOT EXISTS idx_blocks_position ON blocks(page_id, position);
-```
-
-**Block 2 — `0002_files.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS files (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  mime_type TEXT NOT NULL,
-  size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
-  page_id TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_files_page ON files(page_id);
-```
-
-**Block 3 — `0003_workspace.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS workspace (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  name TEXT NOT NULL DEFAULT 'My Workspace',
-  icon TEXT NOT NULL DEFAULT '📋',
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-INSERT OR IGNORE INTO workspace (id, name, icon) VALUES (1, 'My Workspace', '📋');
-```
-
-**Block 4 — `0004_shares.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS page_shares (
-  page_id TEXT PRIMARY KEY,
-  token TEXT NOT NULL UNIQUE,
-  revoked INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);
-```
-
-All blocks use `IF NOT EXISTS` everywhere, so re-running is safe.
-
-#### 2.4. Create the Pages project
-
-**Workers & Pages → Create application → Pages → Upload assets**
-
-- Project name: `markflare`
-- Production branch name: `main`
-- Drag the `dist/` folder onto the upload area
-
-Cloudflare will build nothing — `dist/` is already the final SPA. The `functions/api/[[route]].ts` file is automatically detected and deployed as a Pages Function (your Worker).
-
-#### 2.5. Configure the Pages project
-
-In **Settings → Functions**:
-
-- **Compatibility date** → `2024-09-01`
-- **D1 database bindings → Add**:
-  - Variable name: `DB`
-  - D1 database: `markflare-db` (the one from step 2.2)
-
-In **Settings → Variables and secrets → Add** (Encrypt type, not Plaintext):
-
-| Variable         | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| `AUTH_USERNAME`  | your username                                                  |
-| `AUTH_PASSWORD`  | your password                                                  |
-| `AUTH_SECRET`    | a long random string (rotate to invalidate all sessions)       |
-
-Generate `AUTH_SECRET` with `openssl rand -hex 32`.
-
-> **Heads-up**: Pages injects these secrets into the Worker on the **next deploy**. If you just added them and login fails with `503`, trigger a redeploy (push any commit or click "Retry deployment" on the latest build).
-
-Your site is live at `https://markflare.pages.dev` (or whatever the assigned `*.pages.dev` URL is).
-
-#### 2.6. Custom domain (optional)
-
-**Custom domains → Set up a custom domain** → follow the prompts. Cloudflare auto-issues the cert.
-
----
-
-### 3. Dashboard — download as ZIP
-
-Same end result as Method 2, but you skip `git` and grab the source as a ZIP. Useful if you don't have git set up or just want to deploy once.
-
-#### 3.1. Download and build
-
-1. Go to `https://github.com/<your-user>/markflare`.
-2. Click **Code → Download ZIP**.
-3. Extract the ZIP somewhere on your machine.
-4. Open a terminal in the extracted folder and run:
+Push the repo to GitHub, then in the next step choose **Connect to Git** instead of
+**Upload assets**. Cloudflare rebuilds on every push, so you never run `pnpm run build`
+locally again.
 
 ```bash
-pnpm install
-pnpm run build
+git remote add origin https://github.com/<your-user>/markflare.git
+git push -u origin main
 ```
 
-This produces `dist/`. You'll upload it in step 3.4.
+#### 1.2. Create the database and the bucket
 
-#### 3.2. Create the D1 database
+Markflare needs two storage pieces before it can run. Create both now — neither one
+existed until a few minutes ago, and both have to exist before the app works.
+
+**The database (D1) — this is where your notes live.**
+
+Your pages, blocks, share links and upload metadata. This is a SQLite database, which is
+why a D1 row tops out at 2 MB — relevant in a moment.
 
 **Workers & Pages → D1 SQL databases → Create database**
 
 - Name: `markflare-db`
 
-#### 3.3. Apply the migrations
+**The file bucket (R2) — this is where your images and attachments live.**
 
-Open the D1 database page → **Console** tab. Paste each block below and hit **Execute** in order.
+This one is not optional and not a detail. A D1 row can't hold more than 2 MB, and storing
+bytes as base64 inflates them by a further ~33%, so keeping uploads in the database caps
+you at a ~1.5 MB image. Putting them in R2 is what lifts that ceiling to **25 MB**, and it
+keeps the database for text, which is what a database is good at.
 
-**Block 1 — `0001_initial.sql`. Paste and Execute:**
+**R2 → Overview → Create bucket**
+
+- Bucket name: `markflare-files`
+
+R2 will ask you to add a card on the free plan the first time — the free tier gives you
+10 GB of storage, 1M writes and 10M reads a month, with no charge for bandwidth, which is
+far more than a personal workspace uses.
+
+> **Leave the bucket private.** Don't turn on the public `r2.dev` domain. Files are served
+> through the app, and a public bucket would expose them directly, bypassing it.
+>
+> The name doesn't actually matter, as long as you bind it as `BUCKET` in step 1.5.
+> `markflare-files` is just the default so these steps are copy-pasteable.
+
+More on why this is split across two services, and what to do if you're upgrading from a
+version that kept uploads in the database, in [File storage (R2)](#file-storage-r2).
+
+#### 1.3. Create the tables
+
+Open `markflare-db` → **Console** tab. Paste each of the five blocks below and hit
+**Execute**, in order.
+
+Every block uses `IF NOT EXISTS` throughout, so re-running any of them is safe. The full
+SQL also lives in [`migrations/`](migrations) if you'd rather apply it from a terminal —
+see [Database schema](#database-schema).
+
+<details>
+<summary><strong>Block 1</strong> — <code>0001_initial.sql</code>: pages and blocks</summary>
 
 ```sql
 CREATE TABLE IF NOT EXISTS pages (
@@ -260,7 +218,10 @@ CREATE INDEX IF NOT EXISTS idx_blocks_page ON blocks(page_id);
 CREATE INDEX IF NOT EXISTS idx_blocks_position ON blocks(page_id, position);
 ```
 
-**Block 2 — `0002_files.sql`. Paste and Execute:**
+</details>
+
+<details>
+<summary><strong>Block 2</strong> — <code>0002_files.sql</code>: uploaded file metadata</summary>
 
 ```sql
 CREATE TABLE IF NOT EXISTS files (
@@ -268,7 +229,7 @@ CREATE TABLE IF NOT EXISTS files (
   name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
+  storage TEXT NOT NULL DEFAULT 'r2',
   page_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -277,7 +238,10 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS idx_files_page ON files(page_id);
 ```
 
-**Block 3 — `0003_workspace.sql`. Paste and Execute:**
+</details>
+
+<details>
+<summary><strong>Block 3</strong> — <code>0003_workspace.sql</code>: sidebar name and icon</summary>
 
 ```sql
 CREATE TABLE IF NOT EXISTS workspace (
@@ -290,7 +254,10 @@ CREATE TABLE IF NOT EXISTS workspace (
 INSERT OR IGNORE INTO workspace (id, name, icon) VALUES (1, 'My Workspace', '📋');
 ```
 
-**Block 4 — `0004_shares.sql`. Paste and Execute:**
+</details>
+
+<details>
+<summary><strong>Block 4</strong> — <code>0004_shares.sql</code>: public share tokens</summary>
 
 ```sql
 CREATE TABLE IF NOT EXISTS page_shares (
@@ -304,15 +271,45 @@ CREATE TABLE IF NOT EXISTS page_shares (
 CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);
 ```
 
-#### 3.4. Create the Pages project
+</details>
 
-**Workers & Pages → Create application → Pages → Upload assets**
+<details>
+<summary><strong>Block 5</strong> — <code>0005_api_tokens.sql</code>: tokens for the MCP server</summary>
 
-- Project name: `markflare`
-- Production branch name: `main`
-- Drag the `dist/` folder onto the upload area
+```sql
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT 'MCP Token',
+  token TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at INTEGER NOT NULL
+);
 
-#### 3.5. Configure the Pages project
+CREATE INDEX IF NOT EXISTS idx_api_tokens_id ON api_tokens(id);
+```
+
+</details>
+
+#### 1.4. Create the Pages project
+
+**Workers & Pages → Create application → Pages**
+
+- **Upload assets** (Variant A): project name `markflare`, production branch `main`, then
+  drag your `dist/` folder onto the upload area.
+- **Connect to Git** (Variant B): pick your GitHub account and the `markflare` repo,
+  project name `markflare`, production branch `main`.
+
+If you chose **Connect to Git**, set these on the build configuration screen — they are
+not filled in for you:
+
+- **Build command**: `pnpm run build` ← must be set. Leaving it blank makes Pages skip the
+  build entirely, which fails because `functions/` needs its dependencies installed.
+- **Build output directory**: `dist`
+- **Root directory**: leave blank
+
+Cloudflare detects `functions/api/[[route]].ts` automatically and deploys it as your API.
+
+#### 1.5. Wire up the bindings and secrets
 
 In **Settings → Functions**:
 
@@ -320,32 +317,65 @@ In **Settings → Functions**:
 - **D1 database bindings → Add**:
   - Variable name: `DB`
   - D1 database: `markflare-db`
+- **R2 bucket bindings → Add**:
+  - Variable name: `BUCKET`
+  - R2 bucket: `markflare-files`
 
-In **Settings → Variables and secrets → Add** (Encrypt type, not Plaintext):
+In **Settings → Variables and secrets → Add** (use the **Encrypt** type, not Plaintext):
 
-| Variable         | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| `AUTH_USERNAME`  | your username                                                  |
-| `AUTH_PASSWORD`  | your password                                                  |
-| `AUTH_SECRET`    | a long random string (rotate to invalidate all sessions)       |
+| Variable | Value |
+|---|---|
+| `AUTH_USERNAME` | the username you'll log in with |
+| `AUTH_PASSWORD` | its password — use a strong one |
+| `AUTH_SECRET` | a long random string; rotating it invalidates every session |
 
-Trigger a redeploy after adding the secrets so the Worker picks them up.
+Generate `AUTH_SECRET` with:
 
-Your site is live at `https://markflare.pages.dev`.
+```bash
+openssl rand -hex 32
+```
 
-#### 3.6. Custom domain (optional)
+> **Important:** Pages injects bindings and secrets into the Worker on the **next deploy**.
+> If login fails with `503` right after adding them, trigger a redeploy — push an empty
+> commit, or click **Retry deployment** on the latest build.
 
-**Custom domains → Set up a custom domain** → follow the prompts.
+#### 1.6. Done
+
+Your site is live at `https://markflare.pages.dev`. Sign in with the `AUTH_USERNAME` and
+`AUTH_PASSWORD` you just set.
+
+**Custom domain (optional):** **Custom domains → Set up a custom domain** and follow the
+prompts. Cloudflare issues the certificate automatically.
 
 ---
 
-### 4. Terminal — `wrangler` CLI
+### 2. Local only (no deploy)
 
-If you'd rather script the whole thing from a terminal:
+Use this to work on Markflare without putting anything on the internet. There is no Cloudflare
+project, no D1, and no R2 — the local server uses a SQLite file and a folder on disk.
 
-> Method 4 needs a local `wrangler.toml` — but the repo intentionally doesn't have one (so the dashboard's binding UI stays free for Methods 2/3/5). You create one locally for this workflow and `.gitignore` it (or just don't commit it).
+```bash
+git clone https://github.com/<your-user>/markflare.git
+cd markflare
+pnpm install
+cp .env.example .dev.vars      # set AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET
+pnpm run db:migrate:all        # creates data/markflare.db with the schema
+pnpm run dev                   # Express on :3000 + Vite on :5173
+```
 
-#### 4.1. Clone, install, and build
+Open <http://localhost:5173> and sign in with the credentials in `.dev.vars`.
+
+More detail, including the hot-reload caveat, in [Run locally](#run-locally).
+
+---
+
+### 3. Terminal (`wrangler` CLI)
+
+This method scripts the whole deployment. Because you manage bindings through a config
+file instead of the dashboard, it needs a local `wrangler.toml` — which is why the repo
+doesn't ship one.
+
+#### 3.1. Build
 
 ```bash
 git clone https://github.com/<your-user>/markflare.git
@@ -354,16 +384,20 @@ pnpm install
 pnpm run build
 ```
 
-#### 4.2. Create the D1 database and grab its ID
+#### 3.2. Create the database and the bucket
 
-**Workers & Pages → D1 SQL databases → Create database**
+Same two storage pieces as [step 1.2](#12-create-the-database-and-the-bucket) — and both
+still get created from the dashboard, since neither can be created from the CLI.
 
-- Name: `markflare-db`
-- After creation, click the database and copy the **Database ID** (UUID).
+**The database (D1)** — **Workers & Pages → D1 SQL databases → Create database**, named
+`markflare-db`. Open it and copy the **Database ID** (a UUID) — you need it in step 3.3.
 
-#### 4.3. Create a local `wrangler.toml`
+**The file bucket (R2)** — **R2 → Overview → Create bucket**, named `markflare-files`.
+Leave it private; there's no reason to expose it here either.
 
-In the project root, create `wrangler.toml` with:
+#### 3.3. Create a local `wrangler.toml`
+
+In the project root:
 
 ```toml
 name = "markflare"
@@ -373,127 +407,115 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "markflare-db"
-database_id = "PASTE-YOUR-D1-UUID-HERE"   # ← replace with the UUID from step 4.2
+database_id = "PASTE-YOUR-D1-UUID-HERE"   # ← the UUID from step 3.2
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "markflare-files"
 ```
 
-`pnpm run db:migrate:prod` and `wrangler pages deploy` both read this file. **Don't commit this file** — it has your D1 UUID which is project-specific.
+**Don't commit this file** — it contains your project-specific D1 UUID. It's already in
+`.gitignore`.
 
-#### 4.4. Apply the migrations
+#### 3.4. Apply the schema
 
 ```bash
 pnpm run db:migrate:prod
 ```
 
-This runs `wrangler d1 migrations apply markflare-db --remote`, which reads every file in `migrations/` in lexicographic order and applies them in a single batch. Migrations are idempotent — `IF NOT EXISTS` everywhere — so re-running is safe.
+That runs `wrangler d1 migrations apply markflare-db --remote`, which reads every file in
+`migrations/` in order and applies them in a single batch.
 
-#### 4.5. Deploy
+#### 3.5. Deploy
 
 ```bash
 pnpm run deploy
 ```
 
-This runs `pnpm run build && wrangler pages deploy dist`. The Pages project is created on first deploy if it doesn't exist yet, and the D1 binding comes from `wrangler.toml`.
+Which is `pnpm run build && wrangler pages deploy dist`. The Pages project is created on
+the first deploy if it doesn't exist yet.
 
-#### 4.6. Set the secrets
+#### 3.6. Set the secrets
 
-The deploy won't be functional yet — you still need the three `AUTH_*` secrets. Set them in the dashboard:
+The deploy works but login won't, until you add the three `AUTH_*` values. These stay in
+the dashboard even in this method — **Settings → Variables and secrets → Add** (**Encrypt**
+type): `AUTH_USERNAME`, `AUTH_PASSWORD`, `AUTH_SECRET`.
 
-**Settings → Variables and secrets → Add** (Encrypt type):
-
-| Variable         | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| `AUTH_USERNAME`  | your username                                                  |
-| `AUTH_PASSWORD`  | your password                                                  |
-| `AUTH_SECRET`    | a long random string                                           |
-
-Your site is live at `https://markflare.pages.dev`.
-
-#### 4.7. Custom domain (optional)
-
-**Custom domains → Set up a custom domain** → follow the prompts.
+**Custom domain (optional):** **Custom domains → Set up a custom domain**.
 
 ---
 
-### 5. Dashboard — Git-connected deploy
+## Run locally
 
-Push to GitHub and Cloudflare Pages builds + deploys automatically on every push. No local build step. The `packageManager: "pnpm@10.11.1"` field in `package.json` tells Corepack to use pnpm for the build, so this just works.
+The local stack mirrors production closely enough that you rarely need Cloudflare to work
+on Markflare.
 
-#### 5.1. Push the repo to GitHub
+| Piece | Production | Local |
+|---|---|---|
+| Database | D1 | SQLite at `data/markflare.db` |
+| Uploads | R2 bucket | `uploads/` on disk |
+| API | Pages Function | Express on `:3000` |
 
 ```bash
-git remote add origin https://github.com/<your-user>/markflare.git
-git push -u origin main
+pnpm run dev          # both servers, with hot reload
+pnpm run dev:server   # API only
+pnpm run dev:web      # frontend only
 ```
 
-#### 5.2. Create the Pages project from Git
+| Script | What it does |
+|---|---|
+| `pnpm run dev` | Express + Vite together |
+| `pnpm run build` | type-check and build to `dist/` |
+| `pnpm run db:migrate:all` | apply migrations to the local SQLite file |
+| `pnpm run db:migrate:prod` | apply migrations to the remote D1 |
+| `pnpm run mcp` | start the MCP server |
+| `pnpm run test:mcp` | run the MCP test suite |
 
-**Workers & Pages → Create application → Pages → Connect to Git**
+> **Upgrading from an older checkout?** Migration files are edited in place and tracked by
+> name in `_migrations_applied`, so a database that was already migrated will **not** pick
+> up schema changes. Delete `data/` and re-run `pnpm run db:migrate:all` to rebuild it.
 
-- Select your GitHub account and the `markflare` repo.
-- **Project name**: `markflare`
-- **Production branch**: `main`
+---
 
-Cloudflare will show you a **Build configuration** screen. Set these explicitly:
+## File storage (R2)
 
-- **Build command**: `pnpm run build` (must be set — leaving it blank makes Pages skip the build entirely, which fails because `functions/` references packages that need to be installed first)
-- **Build output directory**: `dist`
-- **Root directory**: leave blank
+> Creating the bucket and binding it are covered in
+> [step 1.2](#12-create-the-database-and-the-bucket). This section is the reasoning behind
+> that split, and what to do if you're coming from an older version.
 
-> The `packageManager: "pnpm@10.11.1"` field in `package.json` tells Corepack to use pnpm for the install step, but it does NOT auto-set the build command. You have to set it manually here.
+Images and attachments never go into the database. In production they land in an R2 bucket;
+in local dev they land in `uploads/`. The `files` table keeps metadata only, plus a `storage`
+column recording which backend owns the bytes. Uploads are capped at **25 MB**.
 
-#### 5.3. Create the D1 database
+**Why not just use the database?** A D1 row tops out at 2 MB, and base64 inflates bytes by
+a further ~33%, so the ceiling would be roughly a 1.5 MB image — and every note would
+compete with those bytes for the same 500 MB on the free plan. Splitting them keeps D1 for
+text, which is what it's good at, and lets the file bucket scale on its own.
 
-**Workers & Pages → D1 SQL databases → Create database**
+**What it costs.** The free tier gives 10 GB-month of storage, 1M writes and 10M reads per
+month, and bandwidth is never charged. Past that it's $0.015/GB-month, so a personal
+workspace doesn't realistically leave $0.
 
-- Name: `markflare-db`
+**One rule worth knowing:** the bucket must stay private, and uploads go through
+`/api/files/:id`. That route is intentionally unauthenticated so images inside public share
+pages can load, which means the R2 bucket is the only thing standing between your uploads
+and the open internet. Don't turn on `r2.dev`.
 
-#### 5.4. Apply the migrations
+### Already deployed with an older version?
 
-Open the D1 database page → **Console** tab. Paste each block below and hit **Execute** in order.
-
-**Block 1 — `0001_initial.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS pages (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL DEFAULT 'Untitled',
-  icon TEXT NOT NULL DEFAULT '📄',
-  parent_id TEXT,
-  position INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (parent_id) REFERENCES pages(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS blocks (
-  id TEXT PRIMARY KEY,
-  page_id TEXT NOT NULL,
-  type TEXT NOT NULL DEFAULT 'paragraph',
-  content TEXT NOT NULL DEFAULT '',
-  checked INTEGER NOT NULL DEFAULT 0,
-  language TEXT NOT NULL DEFAULT '',
-  position INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  parent_id TEXT,
-  collapsed INTEGER NOT NULL DEFAULT 0,
-  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id);
-CREATE INDEX IF NOT EXISTS idx_blocks_page ON blocks(page_id);
-CREATE INDEX IF NOT EXISTS idx_blocks_position ON blocks(page_id, position);
-```
-
-**Block 2 — `0002_files.sql`. Paste and Execute:**
+The old schema stored the file bytes in a `data TEXT` column, base64-encoded. Migration
+files are edited in place, so the new shape only lands on a **fresh** database. If you
+already have one, run this once in the D1 Console:
 
 ```sql
-CREATE TABLE IF NOT EXISTS files (
+DROP TABLE IF EXISTS files;
+
+CREATE TABLE files (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
+  storage TEXT NOT NULL DEFAULT 'r2',
   page_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -502,135 +524,151 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS idx_files_page ON files(page_id);
 ```
 
-**Block 3 — `0003_workspace.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS workspace (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  name TEXT NOT NULL DEFAULT 'My Workspace',
-  icon TEXT NOT NULL DEFAULT '📋',
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-INSERT OR IGNORE INTO workspace (id, name, icon) VALUES (1, 'My Workspace', '📋');
-```
-
-**Block 4 — `0004_shares.sql`. Paste and Execute:**
-
-```sql
-CREATE TABLE IF NOT EXISTS page_shares (
-  page_id TEXT PRIMARY KEY,
-  token TEXT NOT NULL UNIQUE,
-  revoked INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_page_shares_token ON page_shares(token);
-```
-
-#### 5.5. Configure the Pages project
-
-In **Settings → Functions**:
-
-- **Compatibility date** → `2024-09-01`
-- **D1 database bindings → Add**:
-  - Variable name: `DB`
-  - D1 database: `markflare-db` (the one from step 5.3)
-
-In **Settings → Variables and secrets → Add** (Encrypt type, not Plaintext):
-
-| Variable         | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| `AUTH_USERNAME`  | your username                                                  |
-| `AUTH_PASSWORD`  | your password                                                  |
-| `AUTH_SECRET`    | a long random string (rotate to invalidate all sessions)       |
-
-> **Heads-up**: Pages injects these secrets into the Worker on the **next deploy**. If you just added them and login fails with `503`, trigger a redeploy (push any commit or click "Retry deployment" on the latest build).
-
-#### 5.6. Wait for the build
-
-Cloudflare starts the build automatically when you push. Watch the **Deployments** tab — if it goes red, the most common cause is the build command being blank (set it in Settings → Builds & deployments, then retry).
-
-Your site is live at `https://markflare.pages.dev`.
-
-#### 5.7. Custom domain (optional)
-
-**Custom domains → Set up a custom domain** → follow the prompts.
+Images already embedded in your pages will 404 afterwards — their bytes went out with the
+old table. Re-upload them.
 
 ---
 
-## Migrations
+## Database schema
 
-All migrations live in `migrations/NNNN_*.sql`, run in lexicographic order, wrapped in a transaction per file.
+All migrations live in `migrations/NNNN_*.sql`, run in filename order, each wrapped in a
+transaction. They are idempotent, so re-running is safe.
 
-| File                   | Adds                                                                  |
-| ---------------------- | --------------------------------------------------------------------- |
-| `0001_initial.sql`     | `pages`, `blocks` (with `parent_id` + `collapsed`), indexes          |
-| `0002_files.sql`       | `files` table (base64 blobs)                                          |
-| `0003_workspace.sql`   | `workspace` singleton (sidebar name + icon)                           |
-| `0004_shares.sql`      | `page_shares` — public share tokens, with `revoked` tombstone column  |
+| File | Adds |
+|---|---|
+| `0001_initial.sql` | `pages`, `blocks` (with `parent_id` + `collapsed`), indexes |
+| `0002_files.sql` | `files` — metadata only; the bytes live in R2 |
+| `0003_workspace.sql` | `workspace` singleton (sidebar name + icon) |
+| `0004_shares.sql` | `page_shares` — public share tokens with a `revoked` tombstone |
+| `0005_api_tokens.sql` | `api_tokens` — tokens for the MCP server and CLI integrations |
 
-> **D1 caveat** — SQLite has no `ADD COLUMN IF NOT EXISTS`, and D1 has no `DROP COLUMN`. Any future migration that changes a table shape should use the rebuild pattern: create `_<table>_new` with the new shape, `INSERT INTO _<table>_new SELECT ... FROM <table>`, `DROP TABLE <table>`, then `ALTER TABLE _<table>_new RENAME TO <table>`. Run that whole script in a transaction.
+To apply them to a remote D1 from a terminal:
+
+```bash
+pnpm run db:migrate:prod     # wrangler d1 migrations apply markflare-db --remote
+```
+
+To apply them by hand in the dashboard, use the five blocks in
+[step 1.3](#13-create-the-tables).
+
+> **D1 caveat** — SQLite has no `ADD COLUMN IF NOT EXISTS`, and D1 has no `DROP COLUMN`.
+> Any future migration that changes a table's shape has to use the rebuild pattern: create
+> `_<table>_new` with the new shape, `INSERT INTO _<table>_new SELECT ... FROM <table>`,
+> `DROP TABLE <table>`, then `ALTER TABLE _<table>_new RENAME TO <table>` — the whole script
+> in one transaction.
+
+---
 
 ## API
 
-All routes are mounted under `/api`. The 🔒 routes require a Bearer token from `POST /api/auth/login`.
+Everything is mounted under `/api`. 🔒 routes need a bearer token from
+`POST /api/auth/login`, stored in `localStorage` and sent as `Authorization: Bearer …`.
 
-| Method | Path                              | Auth | Purpose                                  |
-| ------ | --------------------------------- | ---- | ---------------------------------------- |
-| POST   | `/api/auth/login`                 | —    | Get a 24h bearer token                   |
-| GET    | `/api/pages`                      | 🔒   | List all pages                           |
-| POST   | `/api/pages`                      | 🔒   | Create a page                            |
-| POST   | `/api/pages/import`               | 🔒   | Create a page from markdown              |
-| GET    | `/api/pages/:id`                  | 🔒   | Page + ordered blocks                    |
-| GET    | `/api/pages/:id/export`           | 🔒   | Export page as markdown                  |
-| PUT    | `/api/pages/:id`                  | 🔒   | Update page                              |
-| DELETE | `/api/pages/:id`                  | 🔒   | Cascade delete page + descendants        |
-| POST   | `/api/pages/:id/blocks`           | 🔒   | Create a block                           |
-| PUT    | `/api/blocks/:id`                 | 🔒   | Update a block (reparenting is cyclic-safe) |
-| DELETE | `/api/blocks/:id`                 | 🔒   | Delete a block                           |
-| PUT    | `/api/blocks/reorder`             | 🔒   | Batch reorder blocks                     |
-| POST   | `/api/files/upload`               | 🔒   | Upload a file (≤ 10 MB, multipart)       |
-| GET    | `/api/files/:id`                  | 🔒   | Stream a file                            |
-| GET    | `/api/workspace`                  | 🔒   | Get sidebar name + icon                  |
-| PUT    | `/api/workspace`                  | 🔒   | Update workspace                         |
-| POST   | `/api/pages/:id/share`            | 🔒   | Activate a public share                  |
-| GET    | `/api/pages/:id/share`            | 🔒   | Get active share                         |
-| DELETE | `/api/pages/:id/share`            | 🔒   | Revoke a share                           |
-| GET    | `/api/share/:token`               | —    | Public tree for a share                  |
-| GET    | `/api/share/:token/page/:pageId`  | —    | Public page inside a share               |
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/login` | — | Get a 24h bearer token |
+| GET | `/api/pages` | 🔒 | List all pages |
+| POST | `/api/pages` | 🔒 | Create a page |
+| POST | `/api/pages/import` | 🔒 | Create a page from markdown |
+| GET | `/api/pages/:id` | 🔒 | Page + ordered blocks |
+| GET | `/api/pages/:id/export` | 🔒 | Export page as markdown |
+| PUT | `/api/pages/:id` | 🔒 | Update page |
+| DELETE | `/api/pages/:id` | 🔒 | Cascade delete page, descendants, blocks and their files |
+| GET | `/api/pages/:id/cascade-count` | 🔒 | How many pages/blocks a delete would remove |
+| POST | `/api/pages/:id/blocks` | 🔒 | Create a block |
+| PUT | `/api/blocks/:id` | 🔒 | Update a block (reparenting is cycle-safe) |
+| DELETE | `/api/blocks/:id` | 🔒 | Delete a block, and its upload if nothing else references it |
+| PUT | `/api/blocks/reorder` | 🔒 | Batch reorder blocks |
+| POST | `/api/files/upload` | 🔒 | Upload a file (≤ 25 MB, multipart) |
+| GET | `/api/files/:id` | — | Stream a file — public so share pages can render images |
+| GET | `/api/workspace` | 🔒 | Get sidebar name + icon |
+| PUT | `/api/workspace` | 🔒 | Update workspace |
+| POST | `/api/pages/:id/share` | 🔒 | Activate a public share |
+| GET | `/api/pages/:id/share` | 🔒 | Get the active share |
+| DELETE | `/api/pages/:id/share` | 🔒 | Revoke a share |
+| GET | `/api/share/:token` | — | Public tree for a share |
+| GET | `/api/share/:token/page/:pageId` | — | Public page inside a share |
+| GET | `/api/auth/tokens` | 🔒 | List your API/MCP tokens |
+| POST | `/api/auth/token` | 🔒 | Create an API/MCP token |
+| DELETE | `/api/auth/tokens/:id` | 🔒 | Revoke a token |
+| GET | `/api/search` | 🔒 | Search pages and blocks |
+
+`GET /api/files/:id` is unauthenticated on purpose: a shared page is viewable by anyone
+with the link, and its embedded images have to load the same way. The R2 bucket stays
+private — the Worker is what serves the bytes.
+
+---
 
 ## Configuration
 
-A template is committed as `.env.example` at the repo root. Copy it to `.dev.vars` for local dev and fill in real values — `.dev.vars` is gitignored.
+A template lives at `.env.example`. Copy it to `.dev.vars` and fill in real values;
+`.dev.vars` is gitignored.
 
 ```bash
 cp .env.example .dev.vars
-# then edit .dev.vars with your real AUTH_USERNAME / AUTH_PASSWORD / AUTH_SECRET
 ```
 
-| Variable        | Required | Description                                                  |
-| --------------- | -------- | ------------------------------------------------------------ |
-| `AUTH_USERNAME` | yes      | Single allowed username                                      |
-| `AUTH_PASSWORD` | yes      | Single allowed password (use a strong one)                   |
-| `AUTH_SECRET`   | yes      | Long random string for signing bearer tokens. Generate with `openssl rand -hex 32`. Rotating this value **invalidates every bearer token issued so far** — useful if a token ever leaks. |
-| `markflare_DB_PATH`| no       | Override local SQLite path (default: `./data/markflare.db`)     |
+| Variable | Required | Description |
+|---|---|---|
+| `AUTH_USERNAME` | yes | The single allowed username |
+| `AUTH_PASSWORD` | yes | The single allowed password — use a strong one |
+| `AUTH_SECRET` | yes | Long random string for signing bearer tokens. Generate with `openssl rand -hex 32`. Rotating it **invalidates every token issued so far**, which is what you want if one ever leaks. |
+| `markflare_DB_PATH` | no | Override the local SQLite path (default `./data/markflare.db`) |
 
-**Local dev** — values are read from `.dev.vars` (gitignored) by both `wrangler pages dev` and the local Express server.
+**Local** — read from `.dev.vars` by both `wrangler pages dev` and the local Express server.
 
-**Production** — set the same three `AUTH_*` values as **Encrypt**-type secrets in the Cloudflare dashboard under **Settings → Variables and secrets** on the Pages project.
+**Production** — set the same three `AUTH_*` values as **Encrypt**-type secrets in the
+Cloudflare dashboard, under **Settings → Variables and secrets**.
+
+---
+
+## Model Context Protocol (MCP)
+
+Markflare ships an MCP server, so AI assistants can read and write your workspace.
+Requires the `api_tokens` table ([block 5](#13-create-the-tables)).
+
+Generate a token from **Account & Settings → API / MCP Token** in the app, then:
+
+```bash
+pnpm run mcp        # start the MCP server on stdio
+pnpm run test:mcp   # run the end-to-end test suite
+```
+
+It can import Markdown content and `.md` files into pages, list your pages and inspect the
+hierarchy, and search pages and blocks.
+
+Client configuration for Claude Desktop, Cursor and Zed is in
+[`mcp/README.md`](mcp/README.md).
+
+---
 
 ## Notes
 
-- **Auth** — single-user. 24h HMAC-SHA256 bearer tokens, constant-time comparisons, login rate-limited at 5/min/IP.
-- **CORS** — same-origin only (frontend and `/api` live on the same host).
-- **Foreign keys** — `PRAGMA foreign_keys = ON` is set on every D1 request; D1 connections start with FKs off by default.
-- **Public shares** — 128-bit tokens, regenerated on every re-activation. Visitor requests are scoped to the share's descendant tree.
+- **Auth** — single user. 24h HMAC-SHA256 bearer tokens, constant-time comparisons, login
+  rate-limited to 5 attempts per minute per IP.
+- **CORS** — same-origin only; the frontend and `/api` share a host.
+- **Foreign keys** — `PRAGMA foreign_keys = ON` runs on every D1 request, because D1
+  connections start with FKs off.
+- **Public shares** — 128-bit tokens, regenerated on every re-activation. Visitor requests
+  are scoped to the share's descendant tree, so a share can't be walked upwards.
+- **Deleting pages** — cascading a page also removes its blocks, the files they referenced,
+  and the R2 objects. An upload is only removed once no block points at it any more, so
+  duplicated images don't break when you delete one copy.
+
+---
 
 ## Tech choices
 
-- **pnpm** — package manager. We use pnpm instead of npm throughout (lockfile is `pnpm-lock.yaml`). Reasons: strict dependency resolution with no phantom deps, content-addressable store that saves disk space across projects, faster installs, and `pnpm.onlyBuiltDependencies` in `package.json` lets us whitelist the few packages that need build scripts (`better-sqlite3`, `esbuild`, `sharp`, `workerd`). To avoid the `npm install` failing on Cloudflare Pages when the project is pnpm-based, `package.json` declares `"packageManager": "pnpm@10.11.1"` — Corepack auto-detects pnpm and sets the right build command. Every command in this README is `pnpm ...`; never `npm ...`.
+- **pnpm** — the package manager throughout (lockfile is `pnpm-lock.yaml`), for strict
+  dependency resolution with no phantom deps, a content-addressable store that saves disk
+  across projects, and faster installs. `pnpm.onlyBuiltDependencies` in `package.json`
+  whitelists the few packages that need build scripts (`better-sqlite3`, `esbuild`,
+  `sharp`, `workerd`). Because Pages runs `npm install` by default on a pnpm project,
+  `package.json` declares `"packageManager": "pnpm@10.11.1"` so Corepack picks pnpm up
+  automatically. Every command in this README is `pnpm …` — never `npm …`.
+- **No `wrangler.toml` in the repo** — see [Deploy](#deploy).
+
+---
 
 ## License
 

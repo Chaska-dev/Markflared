@@ -20,6 +20,11 @@ import {
   timingSafeEqual,
   AuthEnv,
 } from './auth';
+
+// An image/file block points at its upload through `content`, but that column
+// can also hold an http(s) URL or a data: URI. Only a bare UUID is a storage
+// key — never treat anything else as one.
+const STORED_FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { parseMarkdownToBlocks } from './shared/markdown';
 
 // Bootstrap
@@ -77,6 +82,12 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = header.slice('Bearer '.length).trim();
   verifyToken(token, authEnv.username, authEnv.secret).then(v => {
     if (!v.ok) return res.status(401).json({ error: v.expired ? 'Session expired' : 'Unauthorized' });
+    if (v.isApi && v.tokenId) {
+      const row = db.prepare('SELECT id FROM api_tokens WHERE id = ?').get(v.tokenId);
+      if (!row) {
+        return res.status(401).json({ error: 'Token has been revoked' });
+      }
+    }
     next();
   }).catch(() => res.status(401).json({ error: 'Unauthorized' }));
 }
@@ -104,6 +115,40 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
   const { token, expiresAt } = await issueToken(authEnv.username, authEnv.secret);
   return res.json({ token, username: authEnv.username, expiresAt });
+});
+
+// API Token management endpoints (auth-gated)
+
+// POST /api/auth/token — generates a dedicated long-lived token for MCP / external tools
+app.post('/api/auth/token', requireAuth, async (req: Request, res: Response) => {
+  const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim().slice(0, 100) : 'MCP Token';
+  const expiresInDays = Number(req.body?.expiresInDays) || 365;
+  const ttlMs = expiresInDays * 24 * 60 * 60 * 1000;
+  const id = crypto.randomUUID();
+  const { token, expiresAt } = await issueToken(authEnv.username, authEnv.secret, ttlMs, id);
+  db.prepare('INSERT INTO api_tokens (id, name, token, expires_at) VALUES (?, ?, ?, ?)').run(id, name, token, expiresAt);
+  const row: any = db.prepare('SELECT id, name, token, created_at, expires_at FROM api_tokens WHERE id = ?').get(id);
+  return res.json({ id: row.id, name: row.name, token: row.token, expiresAt: row.expires_at, createdAt: row.created_at });
+});
+
+// GET /api/auth/tokens — lists all active API tokens
+app.get('/api/auth/tokens', requireAuth, (req: Request, res: Response) => {
+  const rows: any[] = db.prepare('SELECT id, name, token, created_at, expires_at FROM api_tokens ORDER BY created_at DESC').all();
+  const tokens = rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    tokenPreview: r.token.length > 24 ? `${r.token.slice(0, 12)}...${r.token.slice(-8)}` : r.token,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+  }));
+  return res.json({ tokens });
+});
+
+// DELETE /api/auth/tokens/:id — revokes/deletes an API token
+app.delete('/api/auth/tokens/:id', requireAuth, (req: Request, res: Response) => {
+  const id = req.params.id;
+  db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
+  return res.json({ success: true, id });
 });
 
 // Public share endpoints (NO auth required).
@@ -408,13 +453,39 @@ app.delete('/api/pages/:id', (req, res) => {
     `DELETE FROM blocks WHERE type = 'subpage' AND content IN (${pageIds.map(() => '?').join(',') || "''"})`
   );
   const deletePage = db.prepare('DELETE FROM pages WHERE id = ?');
+
+  // Files come from two sources, same as the Pages function: the rows attached
+  // to these pages, plus image/file blocks pointing at a stored file by ID. The
+  // bytes on disk have to go too — files.page_id is ON DELETE SET NULL, so
+  // deleting the page alone would strand them forever.
+  const inList = pageIds.map(() => '?').join(',') || "''";
+  const byPage = db.prepare(`SELECT id FROM files WHERE page_id IN (${inList})`).all(...pageIds) as any[];
+  const byBlock = db.prepare(
+    `SELECT content FROM blocks WHERE type IN ('image', 'file') AND page_id IN (${inList})`
+  ).all(...pageIds) as any[];
+  const fileIds = new Set<string>();
+  for (const row of byPage) fileIds.add(row.id);
+  for (const row of byBlock) {
+    if (STORED_FILE_ID.test(row.content || '')) fileIds.add(row.content);
+  }
+  const deleteFile = db.prepare('DELETE FROM files WHERE id = ?');
+
   const tx = db.transaction((ids: string[]) => {
     deleteOrphanSubpageRefs.run(...ids);
     for (const pid of ids) deleteBlocks.run(pid);
+    for (const fid of fileIds) deleteFile.run(fid);
     for (const pid of ids) deletePage.run(pid);
   });
   tx(pageIds);
-  res.json({ success: true, deletedPages: pageIds.length });
+
+  // Unlink only after the transaction commits: a rollback must not leave rows
+  // pointing at bytes that are already gone.
+  for (const fid of fileIds) {
+    const filePath = path.join(uploadsDir, fid);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+
+  res.json({ success: true, deletedPages: pageIds.length, deletedFiles: fileIds.size });
 });
 
 // 5b. GET /api/pages/:id/cascade-count — how many subpages and blocks would
@@ -505,10 +576,29 @@ app.put('/api/blocks/:id', (req, res) => {
 });
 
 // 8. DELETE /api/blocks/:id
+// Mirrors the Pages function: removing an image/file block also removes the
+// upload from disk, but only once no other block references the same id.
 app.delete('/api/blocks/:id', (req, res) => {
   const id = req.params.id;
+  const block: any = db.prepare('SELECT type, content FROM blocks WHERE id = ?').get(id);
   db.prepare('DELETE FROM blocks WHERE id = ?').run(id);
-  res.json({ success: true });
+
+  if (!block || (block.type !== 'image' && block.type !== 'file')) {
+    return res.json({ success: true });
+  }
+  if (!STORED_FILE_ID.test(block.content || '')) {
+    return res.json({ success: true });
+  }
+
+  const stillReferenced: any = db
+    .prepare("SELECT 1 AS x FROM blocks WHERE type IN ('image', 'file') AND content = ? LIMIT 1")
+    .get(block.content);
+  if (stillReferenced) return res.json({ success: true });
+
+  db.prepare('DELETE FROM files WHERE id = ?').run(block.content);
+  const filePath = path.join(uploadsDir, block.content);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  return res.json({ success: true });
 });
 
 // 9. PUT /api/blocks/reorder
@@ -596,7 +686,7 @@ app.post('/api/files/upload', requireAuth, upload.single('file'), (req, res) => 
   fs.writeFileSync(filePath, file.buffer);
 
   db.prepare(
-    'INSERT INTO files (id, name, mime_type, size, data, page_id) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO files (id, name, mime_type, size, storage, page_id) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, file.originalname.slice(0, 255), file.mimetype.slice(0, 128), file.size, 'disk', pageId);
 
   const row: any = db.prepare(
@@ -606,28 +696,22 @@ app.post('/api/files/upload', requireAuth, upload.single('file'), (req, res) => 
   res.json({ file: row });
 });
 
-// 11. GET /api/files/:id (supports disk and base64 fallback).
+// 11. GET /api/files/:id — serves from uploads/ on disk. No base64 fallback:
+// local dev mirrors the production path, which reads bytes from object storage.
 app.get('/api/files/:id', (req, res) => {
   const id = req.params.id;
   const filePath = path.join(uploadsDir, id);
 
-  const file: any = db.prepare('SELECT * FROM files WHERE id = ?').get(id);
+  const file: any = db.prepare('SELECT id, mime_type FROM files WHERE id = ?').get(id);
   if (!file) return res.status(404).json({ error: 'Not found' });
 
-  if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', file.mime_type);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    return res.sendFile(filePath);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File data missing' });
   }
 
-  if (file.data && file.data !== 'disk' && file.data !== 'r2') {
-    const buffer = Buffer.from(file.data, 'base64');
-    res.setHeader('Content-Type', file.mime_type);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    return res.send(buffer);
-  }
-
-  return res.status(404).json({ error: 'File data missing' });
+  res.setHeader('Content-Type', file.mime_type);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  return res.sendFile(filePath);
 });
 
 // Listen

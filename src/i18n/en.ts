@@ -19,7 +19,7 @@ export const en = {
   'sidebar.confirmDeleteTitle': 'Delete page?',
   'sidebar.confirmDeleteTitleWithTitle': 'Delete "{title}"?',
   'sidebar.confirmDeleteBody': 'This will delete "{title}" and all its content.',
-  // Plurales simples con keys {one}|{other} (caller elige con count===1).
+  // Simple plurals with {one}|{other} keys (caller picks with count===1).
   'sidebar.deleteDesc.bothPrefix': 'This will delete',
   'sidebar.deleteDesc.sub_one': 'subpage',
   'sidebar.deleteDesc.sub_other': 'subpages',
@@ -168,6 +168,9 @@ export const en = {
   'editor.removeColumn': 'Remove column',
   'editor.addRow': 'Add row',
   'editor.removeRow': 'Remove row',
+  'editor.dropRelease': 'Drop to upload',
+  'editor.uploadFailed': "Couldn't upload {{name}}",
+  'editor.dismissError': 'Dismiss',
 
   // Block context menu (transform + actions)
   'ctx.transformTo': 'Convert to:',
@@ -241,9 +244,30 @@ export const en = {
   'userMenu.title': 'Account & Settings',
   'userMenu.workspaceSettings': 'Workspace Settings',
   'userMenu.iconColor': 'Icon Color',
+  'userMenu.apiToken': 'API / MCP Token',
   'userMenu.theme': 'Appearance',
   'userMenu.language': 'Language',
   'userMenu.logout': 'Log Out',
+
+  // API Token Modal
+  'apiToken.title': 'API & MCP Token',
+  'apiToken.subtitle': 'Generate a dedicated token to connect AI assistants via MCP.',
+  'apiToken.generate': 'Generate Token',
+  'apiToken.generating': 'Generating...',
+  'apiToken.generatedNotice': 'Keep this token secret. It authenticates external tools and MCP servers to your Markflare workspace.',
+  'apiToken.copy': 'Copy Token',
+  'apiToken.copied': 'Copied!',
+  'apiToken.validity': 'Valid for 1 year',
+  'apiToken.configHint': 'Configuration for your AI client:',
+  'apiToken.close': 'Close',
+  'apiToken.nameLabel': 'Token name (optional):',
+  'apiToken.namePlaceholder': 'e.g. Cursor, Claude Desktop',
+  'apiToken.activeTokens': 'Active Tokens',
+  'apiToken.noTokens': 'No active tokens generated yet.',
+  'apiToken.revoke': 'Revoke',
+  'apiToken.revokeConfirm': 'Revoke this token? It will stop working immediately.',
+  'apiToken.createNew': '+ Create New Token',
+  'apiToken.backToList': '← View all tokens',
 
   // Icon Color Picker Modal
   'colorPicker.title': 'Customize Icon Color',

@@ -1,0 +1,125 @@
+# Markflare MCP Server
+
+Official [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server to connect Artificial Intelligence assistants (Claude Desktop, Cursor, Zed, Antigravity, etc.) directly to your **Markflare** workspace.
+
+It allows any LLM or AI agent to:
+- Create pages and import structured Markdown documents into pages and native blocks.
+- Upload local `.md` files directly from disk.
+- Query the workspace page hierarchy and retrieve page identifiers (`parentId`).
+- Search across existing pages and blocks in Markflare.
+- Inspect page details and ordered blocks by page ID.
+
+---
+
+## Authentication: Generating an API Token
+
+Markflare uses dedicated, long-lived API tokens for MCP integrations. This allows AI assistants to authenticate without requiring or exposing your account password.
+
+You can generate a token in two ways:
+
+1. **From the Web UI (Recommended)**:
+   - Open Markflare in your browser (`http://localhost:5173`).
+   - Click on your user avatar at the bottom of the sidebar.
+   - Select **API / MCP Token**.
+   - Click **Generate Token** and copy either the token or the pre-formatted JSON snippet.
+
+2. **From the Terminal (CLI)**:
+   ```bash
+   pnpm run mcp:token
+   ```
+
+---
+
+## Available Tools
+
+| Tool | Arguments | Description |
+|---|---|---|
+| `import_markdown` | `markdown` *(string, required)*<br>`title` *(string, optional)*<br>`parentId` *(string, optional)* | Imports raw Markdown content as a new page divided into blocks (headings, todos, code blocks, tables, KaTeX, etc.). |
+| `import_markdown_file` | `filePath` *(string, required)*<br>`title` *(string, optional)*<br>`parentId` *(string, optional)* | Reads a local `.md` file from disk and imports it as a new page. |
+| `list_pages` | *(none)* | Returns the workspace page hierarchy with icon, title, ID, and relationship (`root` or `parent`). |
+| `search_pages` | `query` *(string, required)* | Searches for text within all pages and blocks. |
+| `get_page` | `pageId` *(string, required)* | Retrieves the full page object and all ordered blocks. |
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `MARKFLARE_URL` | Base URL of your Markflare instance (e.g. `http://localhost:3000` or `https://your-app.pages.dev`). |
+| `MARKFLARE_API_TOKEN` | Dedicated API token generated from the UI or CLI (Recommended). |
+| `MARKFLARE_USERNAME` | Username fallback (if no token is provided). |
+| `MARKFLARE_PASSWORD` | Password fallback (if no token is provided). |
+
+---
+
+## Client Setup
+
+### 1. Claude Desktop
+
+Add the server definition to your configuration file:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "markflare": {
+      "command": "npx",
+      "args": ["-y", "tsx", "path/to/markflare/mcp/index.ts"],
+      "env": {
+        "MARKFLARE_URL": "http://localhost:3000",
+        "MARKFLARE_API_TOKEN": "YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+*(Note: Replace with your absolute path to `mcp/index.ts`)*.
+
+### 2. Cursor IDE
+
+Add to `.cursor/mcp.json` or your Cursor MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "markflare": {
+      "command": "npx",
+      "args": ["-y", "tsx", "mcp/index.ts"],
+      "env": {
+        "MARKFLARE_URL": "http://localhost:3000",
+        "MARKFLARE_API_TOKEN": "YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Automated Tests
+
+To verify all MCP tools against a running instance:
+
+```bash
+# Ensure Markflare is running locally
+pnpm run test:mcp
+```
+
+The test suite automatically validates:
+1. JSON-RPC 2.0 stdio initialization and handshake.
+2. Querying pages via `list_pages`.
+3. Creating a page with rich Markdown elements via `import_markdown`.
+4. Importing a local `.md` file as a nested subpage via `import_markdown_file`.
+5. Searching content via `search_pages`.
+6. Validating block integrity via `get_page`.
+
+---
+
+## Example Files
+
+The [`mcp/examples/`](./examples) directory contains:
+- `sample-note.md`: Sample Markdown note showcasing tables, task lists, TypeScript code blocks, and KaTeX equations.
+- `claude_desktop_config.json`: Configuration snippet for Claude Desktop.
+- `cursor_mcp.json`: Configuration snippet for Cursor IDE.
