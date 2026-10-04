@@ -330,6 +330,67 @@ body {
 
 .block-editor {
   min-height: 200px;
+  position: relative;
+}
+
+/* External file drag: the editor lights up so the gesture reads as "this will
+   upload" rather than silently doing nothing. */
+.block-editor--file-drag {
+  outline: 2px dashed var(--accent);
+  outline-offset: 6px;
+  border-radius: 6px;
+  background: rgba(243, 128, 32, 0.04);
+}
+
+.block-editor-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.block-editor-upload-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.block-editor-upload-error span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.block-editor-upload-error button {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.block-editor-upload-error button:hover {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .block-wrapper {

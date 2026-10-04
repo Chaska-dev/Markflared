@@ -169,6 +169,9 @@ export const es: Record<TranslationKey, string> = {
   'editor.removeColumn': 'Eliminar columna',
   'editor.addRow': 'Añadir fila',
   'editor.removeRow': 'Eliminar fila',
+  'editor.dropRelease': 'Soltá para subir',
+  'editor.uploadFailed': 'No se pudo subir {{name}}',
+  'editor.dismissError': 'Descartar',
 
   // Block context menu
   'ctx.transformTo': 'Convertir a:',

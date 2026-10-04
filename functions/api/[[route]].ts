@@ -15,6 +15,11 @@ const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const LOGIN_RATE_WINDOW_MS = 60 * 1000; // 1-minute window
 const LOGIN_RATE_MAX = 5; // max 5 attempts / min / IP
 
+// An image/file block points at its upload through `content`, but that column
+// can also hold an http(s) URL or a data: URI. Only a bare UUID is a storage
+// key — never treat anything else as one.
+const STORED_FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // In-memory per-instance rate limit. Not perfect at global scale (Workers
 // don't share state across isolates) but serves as base defense against
 // casual brute force for a personal app. Production multi-tenant should
@@ -157,7 +162,7 @@ async function ensureSchema(db: D1Database) {
         name TEXT NOT NULL,
         mime_type TEXT NOT NULL,
         size INTEGER NOT NULL DEFAULT 0,
-        data TEXT NOT NULL,
+        storage TEXT NOT NULL DEFAULT 'r2',
         page_id TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL
@@ -633,13 +638,43 @@ app.put('/pages/:id', async (c) => {
   return c.json({ page });
 });
 
-// 5. DELETE /api/pages/:id (cascade: delete subpages + blocks in a tx)
+// 5. DELETE /api/pages/:id (cascade: subpages, blocks and their files)
+// Files are gathered before anything is deleted, from two sources: the files
+// rows attached to these pages, and the image/file blocks that reference them
+// by ID. Missing the second source orphans R2 objects permanently — R2 has no
+// cascade of its own, and the files.page_id FK is SET NULL, not CASCADE.
 app.delete('/pages/:id', async (c) => {
   const id = c.req.param('id');
   const pageIds = await collectDescendantPageIds(c, id);
+
+  const byPage = await selectIn(c.env.DB, 'SELECT id FROM files WHERE page_id IN', pageIds);
+  const byBlock = await selectIn(
+    c.env.DB,
+    "SELECT content FROM blocks WHERE type IN ('image', 'file') AND page_id IN",
+    pageIds
+  );
+
+  const fileIds = new Set<string>();
+  for (const row of byPage) fileIds.add(row.id);
+  for (const row of byBlock) {
+    if (STORED_FILE_ID.test(row.content || '')) fileIds.add(row.content);
+  }
+
+  // Drop the R2 objects before the metadata. DeleteObject is free on R2.
+  if (c.env.BUCKET && fileIds.size > 0) {
+    await Promise.all([...fileIds].map(fid => c.env.BUCKET!.delete(fid)));
+  }
+
   // D1 doesn't support multi-statement transactions outside of batch, so we
-  // use batch: delete blocks per page, then the pages.
+  // use batch: files, then blocks per page, then the pages.
   const stmts: D1PreparedStatement[] = [];
+  const allFileIds = [...fileIds];
+  for (let i = 0; i < allFileIds.length; i += 50) {
+    const slice = allFileIds.slice(i, i + 50);
+    stmts.push(
+      c.env.DB.prepare(`DELETE FROM files WHERE id IN (${slice.map(() => '?').join(',')})`).bind(...slice)
+    );
+  }
   for (const pid of pageIds) {
     stmts.push(c.env.DB.prepare('DELETE FROM blocks WHERE page_id = ?').bind(pid));
   }
@@ -647,7 +682,7 @@ app.delete('/pages/:id', async (c) => {
     stmts.push(c.env.DB.prepare('DELETE FROM pages WHERE id = ?').bind(pid));
   }
   if (stmts.length > 0) await c.env.DB.batch(stmts);
-  return c.json({ success: true, deletedPages: pageIds.length });
+  return c.json({ success: true, deletedPages: pageIds.length, deletedFiles: fileIds.size });
 });
 
 // 5b. GET /api/pages/:id/cascade-count
@@ -677,6 +712,22 @@ async function collectDescendantPageIds(c: Context<{ Bindings: Bindings }>, root
     for (const r of results) queue.push(r.id);
   }
   return result;
+}
+
+// Run a `... IN (...)` lookup in chunks. D1 caps a query at 100 bound
+// parameters, so a wide page tree would otherwise blow up on the placeholder
+// list. `sqlPrefix` must end with the IN keyword.
+async function selectIn(db: D1Database, sqlPrefix: string, ids: string[]): Promise<any[]> {
+  const out: any[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const slice = ids.slice(i, i + 50);
+    const { results } = await db
+      .prepare(`${sqlPrefix} (${slice.map(() => '?').join(',')})`)
+      .bind(...slice)
+      .all();
+    out.push(...((results || []) as any[]));
+  }
+  return out;
 }
 
 // 6. POST /api/pages/:pageId/blocks
@@ -760,9 +811,30 @@ app.put('/blocks/:id', async (c) => {
 });
 
 // 8. DELETE /api/blocks/:id
+// An image/file block owns its upload, so removing the block has to remove the
+// bytes too. But the same file id can be referenced by several blocks (a
+// copied or duplicated image), so the upload is only dropped once no block
+// points at it any more — deleting one copy must not break the others.
 app.delete('/blocks/:id', async (c) => {
   const id = c.req.param('id');
+  const block: any = await c.env.DB.prepare('SELECT type, content FROM blocks WHERE id = ?').bind(id).first();
   await c.env.DB.prepare('DELETE FROM blocks WHERE id = ?').bind(id).run();
+
+  if (!block || (block.type !== 'image' && block.type !== 'file')) {
+    return c.json({ success: true });
+  }
+  if (!STORED_FILE_ID.test(block.content || '')) {
+    return c.json({ success: true });
+  }
+
+  const stillReferenced: any = await c.env.DB
+    .prepare("SELECT 1 AS x FROM blocks WHERE type IN ('image', 'file') AND content = ? LIMIT 1")
+    .bind(block.content)
+    .first();
+  if (stillReferenced) return c.json({ success: true });
+
+  await c.env.DB.prepare('DELETE FROM files WHERE id = ?').bind(block.content).run();
+  if (c.env.BUCKET) await c.env.BUCKET.delete(block.content);
   return c.json({ success: true });
 });
 
@@ -838,7 +910,9 @@ app.get('/search', async (c) => {
   return c.json({ results });
 });
 
-// 10. POST /api/files/upload (with Cloudflare R2 support and D1 fallback)
+// 10. POST /api/files/upload — R2 is the only binary backend. There is no D1
+// fallback on purpose: silently base64-ing into D1 is what filled the database
+// before, so a missing bucket must fail loudly instead.
 app.post('/files/upload', async (c) => {
   const formData = await c.req.parseBody();
   const file = formData['file'] as File;
@@ -846,38 +920,23 @@ app.post('/files/upload', async (c) => {
   
   if (!file) return c.json({ error: 'No file' }, 400);
   if (file.size > 25 * 1024 * 1024) return c.json({ error: 'File too large (max 25MB)' }, 400);
-  if (!c.env.BUCKET && file.size > 750 * 1024) {
+  if (!c.env.BUCKET) {
     return c.json({
-      error: 'No Cloudflare R2 configured, the maximum file size supported in D1 is 750KB. Enable [[r2_buckets]] in wrangler.toml to support up to 25MB.'
-    }, 400);
+      error: 'Storage not configured. Bind an R2 bucket as BUCKET in the Pages project settings.'
+    }, 503);
   }
 
   const id = crypto.randomUUID();
   const buffer = await file.arrayBuffer();
 
-  if (c.env.BUCKET) {
-    // Store in Cloudflare R2
-    await c.env.BUCKET.put(id, buffer, {
-      httpMetadata: { contentType: file.type || 'application/octet-stream' },
-      customMetadata: { name: file.name },
-    });
+  await c.env.BUCKET.put(id, buffer, {
+    httpMetadata: { contentType: file.type || 'application/octet-stream' },
+    customMetadata: { name: file.name },
+  });
 
-    await c.env.DB.prepare(
-      'INSERT INTO files (id, name, mime_type, size, data, page_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)'
-    ).bind(id, file.name.slice(0, 255), (file.type || 'application/octet-stream').slice(0, 128), file.size, 'r2', pageId || null).run();
-  } else {
-    // Fallback to D1 (base64)
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64 = btoa(binary);
-
-    await c.env.DB.prepare(
-      'INSERT INTO files (id, name, mime_type, size, data, page_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)'
-    ).bind(id, file.name.slice(0, 255), (file.type || 'application/octet-stream').slice(0, 128), file.size, base64, pageId || null).run();
-  }
+  await c.env.DB.prepare(
+    'INSERT INTO files (id, name, mime_type, size, storage, page_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)'
+  ).bind(id, file.name.slice(0, 255), (file.type || 'application/octet-stream').slice(0, 128), file.size, 'r2', pageId || null).run();
 
   const newFile: any = await c.env.DB.prepare('SELECT id, name, mime_type, size, page_id, created_at FROM files WHERE id = ?').bind(id).first();
   newFile.url = `/api/files/${id}`;
@@ -885,41 +944,28 @@ app.post('/files/upload', async (c) => {
   return c.json({ file: newFile });
 });
 
-// 11. GET /api/files/:id (supports R2 and D1 with cache)
+// 11. GET /api/files/:id — streams straight from R2; D1 only supplies the
+// content type when the object carries no metadata of its own. Intentionally
+// unauthenticated so public share links can render their images.
 app.get('/files/:id', async (c) => {
   const id = c.req.param('id');
 
-  if (c.env.BUCKET) {
-    const object = await c.env.BUCKET.get(id);
-    if (object) {
-      const headers = new Headers();
-      object.writeHttpMetadata(headers);
-      headers.set('etag', object.httpEtag);
-      headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-      if (!headers.has('Content-Type')) {
-        const fileRow: any = await c.env.DB.prepare('SELECT mime_type FROM files WHERE id = ?').bind(id).first();
-        if (fileRow?.mime_type) headers.set('Content-Type', fileRow.mime_type);
-      }
-      return new Response(object.body, { headers });
-    }
+  if (!c.env.BUCKET) {
+    return c.json({ error: 'Storage not configured' }, 503);
   }
 
-  const file: any = await c.env.DB.prepare('SELECT * FROM files WHERE id = ?').bind(id).first();
-  if (!file) return c.json({ error: 'Not found' }, 404);
-  if (file.data === 'r2') return c.json({ error: 'File not found in storage' }, 404);
+  const object = await c.env.BUCKET.get(id);
+  if (!object) return c.json({ error: 'Not found' }, 404);
 
-  const binaryString = atob(file.data);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  if (!headers.has('Content-Type')) {
+    const fileRow: any = await c.env.DB.prepare('SELECT mime_type FROM files WHERE id = ?').bind(id).first();
+    if (fileRow?.mime_type) headers.set('Content-Type', fileRow.mime_type);
   }
-
-  return new Response(bytes, {
-    headers: {
-      'Content-Type': file.mime_type,
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    },
-  });
+  return new Response(object.body, { headers });
 });
 
 // 12. GET /api/workspace — returns the singleton with the current name and icon.

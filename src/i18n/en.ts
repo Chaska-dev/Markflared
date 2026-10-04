@@ -19,7 +19,7 @@ export const en = {
   'sidebar.confirmDeleteTitle': 'Delete page?',
   'sidebar.confirmDeleteTitleWithTitle': 'Delete "{title}"?',
   'sidebar.confirmDeleteBody': 'This will delete "{title}" and all its content.',
-  // Plurales simples con keys {one}|{other} (caller elige con count===1).
+  // Simple plurals with {one}|{other} keys (caller picks with count===1).
   'sidebar.deleteDesc.bothPrefix': 'This will delete',
   'sidebar.deleteDesc.sub_one': 'subpage',
   'sidebar.deleteDesc.sub_other': 'subpages',
@@ -168,6 +168,9 @@ export const en = {
   'editor.removeColumn': 'Remove column',
   'editor.addRow': 'Add row',
   'editor.removeRow': 'Remove row',
+  'editor.dropRelease': 'Drop to upload',
+  'editor.uploadFailed': "Couldn't upload {{name}}",
+  'editor.dismissError': 'Dismiss',
 
   // Block context menu (transform + actions)
   'ctx.transformTo': 'Convert to:',
